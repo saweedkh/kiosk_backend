@@ -1,0 +1,181 @@
+from django.db import transaction
+from django.utils import timezone
+from apps.payment.models import Transaction
+from apps.payment.selectors.transaction_selector import TransactionSelector
+from apps.payment.gateway.adapter import PaymentGatewayAdapter
+from apps.payment.gateway.exceptions import GatewayException
+from apps.logs.services.log_service import LogService
+from apps.core.exceptions.payment import PaymentFailedException
+
+
+class PaymentService:
+    @staticmethod
+    def generate_transaction_id():
+        timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
+        random_suffix = str(timezone.now().microsecond)[:4]
+        return f"TXN-{timestamp}-{random_suffix}"
+    
+    @staticmethod
+    @transaction.atomic
+    def initiate_payment(order_id: int, amount: int, order_details: dict):
+        if not PaymentGatewayAdapter.is_gateway_active():
+            raise GatewayException('Payment gateway is not active')
+        
+        gateway = PaymentGatewayAdapter.get_gateway()
+        transaction_id = PaymentService.generate_transaction_id()
+        
+        try:
+            gateway_response = gateway.initiate_payment(
+                amount=amount,
+                order_details=order_details
+            )
+            
+            transaction_obj = Transaction.objects.create(
+                transaction_id=transaction_id,
+                order_id=order_id,
+                order_details=order_details,
+                amount=amount,
+                status='pending',
+                gateway_name=gateway.__class__.__name__,
+                gateway_request_data={'amount': amount, 'order_details': order_details},
+                gateway_response_data=gateway_response
+            )
+            
+            LogService.log_info(
+                'payment',
+                'payment_initiated',
+                details={
+                    'transaction_id': transaction_id,
+                    'order_id': order_id,
+                    'amount': amount,
+                    'gateway': gateway.__class__.__name__
+                }
+            )
+            
+            return transaction_obj
+            
+        except Exception as e:
+            LogService.log_error(
+                'payment',
+                'payment_initiation_failed',
+                details={
+                    'order_id': order_id,
+                    'amount': amount,
+                    'error': str(e)
+                }
+            )
+            raise PaymentFailedException(f'Failed to initiate payment: {str(e)}')
+    
+    @staticmethod
+    @transaction.atomic
+    def verify_payment(transaction_id: str):
+        transaction_obj = TransactionSelector.get_transaction_by_transaction_id(transaction_id)
+        if not transaction_obj:
+            raise GatewayException('Transaction not found')
+        
+        gateway = PaymentGatewayAdapter.get_gateway()
+        
+        try:
+            verification_result = gateway.verify_payment(transaction_id)
+            
+            transaction_obj.gateway_response_data = verification_result
+            transaction_obj.status = verification_result.get('status', transaction_obj.status)
+            transaction_obj.save()
+            
+            LogService.log_info(
+                'payment',
+                'payment_verified',
+                details={
+                    'transaction_id': transaction_id,
+                    'status': transaction_obj.status
+                }
+            )
+            
+            return transaction_obj
+            
+        except Exception as e:
+            transaction_obj.status = 'failed'
+            transaction_obj.error_message = str(e)
+            transaction_obj.save()
+            
+            LogService.log_error(
+                'payment',
+                'payment_verification_failed',
+                details={
+                    'transaction_id': transaction_id,
+                    'error': str(e)
+                }
+            )
+            raise PaymentFailedException(f'Failed to verify payment: {str(e)}')
+    
+    @staticmethod
+    def get_payment_status(transaction_id: str):
+        transaction_obj = TransactionSelector.get_transaction_by_transaction_id(transaction_id)
+        if not transaction_obj:
+            raise GatewayException('Transaction not found')
+        
+        gateway = PaymentGatewayAdapter.get_gateway()
+        
+        try:
+            status_result = gateway.get_payment_status(transaction_id)
+            
+            transaction_obj.gateway_response_data = status_result
+            transaction_obj.status = status_result.get('status', transaction_obj.status)
+            transaction_obj.save()
+            
+            return transaction_obj
+            
+        except Exception as e:
+            LogService.log_error(
+                'payment',
+                'payment_status_check_failed',
+                details={
+                    'transaction_id': transaction_id,
+                    'error': str(e)
+                }
+            )
+            raise GatewayException(f'Failed to get payment status: {str(e)}')
+    
+    @staticmethod
+    @transaction.atomic
+    def handle_webhook(webhook_data: dict):
+        transaction_id = webhook_data.get('transaction_id')
+        if not transaction_id:
+            raise GatewayException('Transaction ID not found in webhook data')
+        
+        transaction_obj = TransactionSelector.get_transaction_by_transaction_id(transaction_id)
+        if not transaction_obj:
+            raise GatewayException('Transaction not found')
+        
+        gateway = PaymentGatewayAdapter.get_gateway()
+        
+        try:
+            webhook_result = gateway.handle_webhook(webhook_data)
+            
+            new_status = webhook_data.get('status', transaction_obj.status)
+            transaction_obj.status = new_status
+            transaction_obj.gateway_response_data = webhook_result
+            transaction_obj.save()
+            
+            LogService.log_info(
+                'payment',
+                'webhook_processed',
+                details={
+                    'transaction_id': transaction_id,
+                    'status': new_status
+                }
+            )
+            
+            return transaction_obj
+            
+        except Exception as e:
+            LogService.log_error(
+                'payment',
+                'webhook_processing_failed',
+                details={
+                    'transaction_id': transaction_id,
+                    'error': str(e)
+                }
+            )
+            raise GatewayException(f'Failed to process webhook: {str(e)}')
+

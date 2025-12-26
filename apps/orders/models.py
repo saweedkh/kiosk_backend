@@ -1,0 +1,89 @@
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+from apps.core.models import TimeStampedModel
+from .managers import OrderManager, InvoiceManager
+
+
+class Order(TimeStampedModel):
+    STATUS_CHOICES = [
+        ('pending', _('در انتظار')),
+        ('processing', _('در حال پردازش')),
+        ('paid', _('پرداخت شده')),
+        ('completed', _('تکمیل شده')),
+        ('cancelled', _('لغو شده')),
+    ]
+    
+    order_number = models.CharField(max_length=50, unique=True, verbose_name=_('شماره سفارش'))
+    session_key = models.CharField(max_length=40, verbose_name=_('کلید Session'))
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name=_('وضعیت'))
+    total_amount = models.IntegerField(verbose_name=_('مبلغ کل'))
+    payment_status = models.CharField(max_length=20, default='pending', verbose_name=_('وضعیت پرداخت'))
+    transaction_id = models.CharField(max_length=100, null=True, blank=True, verbose_name=_('شناسه تراکنش'))
+    
+    objects = OrderManager()
+    
+    class Meta:
+        verbose_name = _('سفارش')
+        verbose_name_plural = _('سفارش‌ها')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['order_number']),
+            models.Index(fields=['session_key']),
+            models.Index(fields=['status']),
+        ]
+    
+    def __str__(self):
+        return f"Order {self.order_number}"
+
+
+class OrderItem(TimeStampedModel):
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='items',
+        verbose_name=_('سفارش')
+    )
+    product = models.ForeignKey(
+        'products.Product',
+        on_delete=models.PROTECT,
+        verbose_name=_('محصول')
+    )
+    quantity = models.IntegerField(verbose_name=_('تعداد'))
+    unit_price = models.IntegerField(verbose_name=_('قیمت واحد'))
+    
+    class Meta:
+        verbose_name = _('آیتم سفارش')
+        verbose_name_plural = _('آیتم‌های سفارش')
+        ordering = ['created_at']
+    
+    def __str__(self):
+        return f"{self.product.name} - {self.quantity}"
+    
+    @property
+    def subtotal(self):
+        return self.quantity * self.unit_price
+
+
+class Invoice(TimeStampedModel):
+    invoice_number = models.CharField(max_length=50, unique=True, verbose_name=_('شماره فاکتور'))
+    order = models.OneToOneField(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='invoice',
+        verbose_name=_('سفارش')
+    )
+    pdf_file = models.FileField(upload_to='invoices/pdf/', null=True, blank=True, verbose_name=_('فایل PDF'))
+    json_data = models.JSONField(null=True, blank=True, verbose_name=_('داده JSON'))
+    
+    objects = InvoiceManager()
+    
+    class Meta:
+        verbose_name = _('فاکتور')
+        verbose_name_plural = _('فاکتورها')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['invoice_number']),
+        ]
+    
+    def __str__(self):
+        return f"Invoice {self.invoice_number}"
