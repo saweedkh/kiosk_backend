@@ -75,13 +75,78 @@
 
 ## نصب و راه‌اندازی
 
-### 1. Clone پروژه
+### روش 1: استفاده از Docker (پیشنهادی)
+
+#### پیش‌نیازها
+- Docker Engine 20.10+
+- Docker Compose 2.0+
+
+#### Development Mode
+
+1. **Clone پروژه**
 ```bash
 git clone https://github.com/saweedkh/kiosk_backend.git
 cd kiosk_backend
 ```
 
-### 2. ایجاد Virtual Environment
+2. **تنظیم Environment Variables**
+```bash
+cp .env.example .env
+```
+سپس فایل `.env` را ویرایش کنید و `DATABASE_HOST` را به `db` تغییر دهید.
+
+3. **ساخت و راه‌اندازی Containers**
+```bash
+docker-compose -f docker-compose.dev.yml up -d --build
+```
+
+یا با Makefile:
+```bash
+make build-dev
+make up-dev
+```
+
+4. **ایجاد Superuser**
+```bash
+docker-compose -f docker-compose.dev.yml exec web python manage.py createsuperuser
+```
+
+یا:
+```bash
+make createsuperuser-dev
+```
+
+5. **دسترسی به پروژه**
+- **API**: http://localhost:8000
+- **Admin Panel**: http://localhost:8000/admin/
+
+#### Production Mode
+
+برای راه‌اندازی در Production، به [docker/README.md](./docker/README.md) مراجعه کنید.
+
+**نکته**: این پروژه دو مدل Docker دارد:
+- **Development**: برای توسعه و تست (با Django runserver)
+- **Production**: برای محیط Production (با Gunicorn)
+
+برای اطلاعات بیشتر، به [docker/README.md](./docker/README.md) مراجعه کنید.
+
+---
+
+### روش 2: راه‌اندازی دستی
+
+#### پیش‌نیازها
+- Python 3.9+
+- PostgreSQL 12+
+
+#### مراحل راه‌اندازی
+
+1. **Clone پروژه**
+```bash
+git clone https://github.com/saweedkh/kiosk_backend.git
+cd kiosk_backend
+```
+
+2. **ایجاد Virtual Environment**
 ```bash
 python3.9 -m venv venv
 source venv/bin/activate  # Linux/Mac
@@ -89,15 +154,15 @@ source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate  # Windows
 ```
 
-### 3. نصب Dependencies
+3. **نصب Dependencies**
 ```bash
 pip install -r requirements/base.txt
 pip install -r requirements/development.txt
 ```
 
-### 4. تنظیم Database
+4. **تنظیم Database**
 
-#### ایجاد Database در PostgreSQL
+ایجاد Database در PostgreSQL:
 ```sql
 CREATE DATABASE kiosk_db;
 CREATE USER kiosk_user WITH PASSWORD 'your_password';
@@ -107,7 +172,7 @@ ALTER ROLE kiosk_user SET timezone TO 'Asia/Tehran';
 GRANT ALL PRIVILEGES ON DATABASE kiosk_db TO kiosk_user;
 ```
 
-### 5. تنظیم Environment Variables
+5. **تنظیم Environment Variables**
 
 کپی کردن `.env.example` به `.env`:
 ```bash
@@ -135,19 +200,24 @@ PAYMENT_GATEWAY_TERMINAL_ID=mock_terminal_id_789
 PAYMENT_GATEWAY_CALLBACK_URL=http://localhost:8000/api/kiosk/payment/verify/
 ```
 
-### 6. اجرای Migrations
+6. **اجرای Migrations**
 ```bash
 python manage.py migrate
 ```
 
-### 7. ایجاد Superuser
+7. **ایجاد Superuser**
 ```bash
 python manage.py createsuperuser
 ```
 
-### 8. جمع‌آوری Static Files
+8. **جمع‌آوری Static Files**
 ```bash
 python manage.py collectstatic --noinput
+```
+
+9. **اجرای پروژه**
+```bash
+python manage.py runserver
 ```
 
 ---
