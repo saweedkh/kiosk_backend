@@ -549,34 +549,6 @@ External API
 
 ---
 
-## Backup System
-
-### Architecture
-
-```
-Celery Beat (Scheduler)
-    ↓
-Backup Task (every 6 hours)
-    ↓
-Backup Manager
-    ↓
-Database Dump + Media Files
-    ↓
-Compress & Store
-    ↓
-Cleanup Old Backups
-```
-
-### Backup Types
-- **Full Backup**: روزانه (تمام Database + Media)
-- **Incremental Backup**: هر 6 ساعت (تغییرات)
-
-### Storage
-- Local Storage (پیش‌فرض)
-- S3 Storage (اختیاری)
-
----
-
 ## Logging Architecture
 
 ### Log Types
@@ -602,7 +574,7 @@ Service Layer (Action Logging)
     ↓
 Log Service
     ↓
-Database (SystemLog/TransactionLog)
+Console & File (logs/kiosk.log)
 ```
 
 ---
@@ -616,13 +588,7 @@ Database (SystemLog/TransactionLog)
 - Query Optimization در Selectors
 
 ### Caching
-- Session Caching (Redis)
 - Query Result Caching (اختیاری)
-
-### Background Tasks
-- استفاده از Celery برای Tasks سنگین
-- Backup در Background
-- Email Sending (اگر نیاز باشد)
 
 ---
 
@@ -638,7 +604,6 @@ Database (SystemLog/TransactionLog)
 - Connection Pooling
 
 ### Caching Strategy
-- Redis برای Session
 - Cache برای Queries پرتکرار
 
 ---
@@ -652,7 +617,6 @@ Database (SystemLog/TransactionLog)
 ### Health Checks
 - `/health/` Endpoint
 - Database Connection Check
-- Redis Connection Check
 
 ### Metrics
 - Request Count

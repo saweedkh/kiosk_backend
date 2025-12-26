@@ -538,10 +538,6 @@ def get_products():
 - همیشه از Pagination استفاده کنید
 - Page Size مناسب انتخاب کنید (20-50)
 
-### 4. Background Tasks
-- Tasks سنگین را در Celery اجرا کنید
-- مثال: Backup، Email Sending، Report Generation
-
 ---
 
 ## Documentation

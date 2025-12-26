@@ -359,7 +359,7 @@ GET /api/kiosk/orders/{order_number}/invoice/json/
 
 ## Admin APIs
 
-### Base Path: `/api/admin/`
+### Base Path: `/api/kiosk/admin-panel/`
 
 ---
 
@@ -367,7 +367,7 @@ GET /api/kiosk/orders/{order_number}/invoice/json/
 
 #### لاگین
 ```http
-POST /api/admin/auth/login/
+POST /api/kiosk/admin-panel/auth/login/
 ```
 
 **Request Body:**
@@ -394,7 +394,7 @@ POST /api/admin/auth/login/
 
 #### خروج
 ```http
-POST /api/admin/auth/logout/
+POST /api/kiosk/admin-panel/auth/logout/
 ```
 
 **Headers:**
@@ -411,7 +411,7 @@ Authorization: Session <session_id>
 
 #### اطلاعات کاربر لاگین شده
 ```http
-GET /api/admin/auth/me/
+GET /api/kiosk/admin-panel/auth/me/
 ```
 
 **Response:**
@@ -431,7 +431,7 @@ GET /api/admin/auth/me/
 
 #### لیست محصولات
 ```http
-GET /api/admin/products/
+GET /api/kiosk/admin-panel/products/
 ```
 
 **Query Parameters:**
@@ -445,7 +445,7 @@ GET /api/admin/products/
 
 #### افزودن محصول
 ```http
-POST /api/admin/products/
+POST /api/kiosk/admin-panel/products/
 ```
 
 **Request Body:**
@@ -465,15 +465,15 @@ POST /api/admin/products/
 
 #### ویرایش محصول
 ```http
-PUT /api/admin/products/{id}/
-PATCH /api/admin/products/{id}/
+PUT /api/kiosk/admin-panel/products/{id}/
+PATCH /api/kiosk/admin-panel/products/{id}/
 ```
 
 **Request Body:** همانند افزودن محصول
 
 #### تغییر موجودی
 ```http
-PUT /api/admin/products/{id}/update_stock/
+PUT /api/kiosk/admin-panel/products/{id}/update_stock/
 ```
 
 **Request Body:**
@@ -487,7 +487,7 @@ PUT /api/admin/products/{id}/update_stock/
 
 #### حذف محصول
 ```http
-DELETE /api/admin/products/{id}/
+DELETE /api/kiosk/admin-panel/products/{id}/
 ```
 
 **Response:** `204 No Content`
@@ -498,14 +498,14 @@ DELETE /api/admin/products/{id}/
 
 #### لیست دسته‌بندی‌ها
 ```http
-GET /api/admin/categories/
+GET /api/kiosk/admin-panel/categories/
 ```
 
 **Response:** همانند Categories API
 
 #### افزودن دسته‌بندی
 ```http
-POST /api/admin/categories/
+POST /api/kiosk/admin-panel/categories/
 ```
 
 **Request Body:**
@@ -520,13 +520,13 @@ POST /api/admin/categories/
 
 #### ویرایش دسته‌بندی
 ```http
-PUT /api/admin/categories/{id}/
-PATCH /api/admin/categories/{id}/
+PUT /api/kiosk/admin-panel/categories/{id}/
+PATCH /api/kiosk/admin-panel/categories/{id}/
 ```
 
 #### حذف دسته‌بندی
 ```http
-DELETE /api/admin/categories/{id}/
+DELETE /api/kiosk/admin-panel/categories/{id}/
 ```
 
 ---
@@ -565,7 +565,7 @@ GET /api/admin/orders/
 
 #### جزئیات سفارش
 ```http
-GET /api/admin/orders/{id}/
+GET /api/kiosk/admin-panel/orders/{id}/
 ```
 
 **Response:** جزئیات کامل سفارش
@@ -603,14 +603,14 @@ GET /api/admin/reports/sales/
 
 #### گزارش فروش PDF
 ```http
-GET /api/admin/reports/sales/pdf/?start_date=2024-01-01&end_date=2024-01-31
+GET /api/kiosk/admin-panel/reports/sales/pdf/?start_date=2024-01-01&end_date=2024-01-31
 ```
 
 **Response:** فایل PDF
 
 #### گزارش تراکنش‌ها
 ```http
-GET /api/admin/reports/transactions/
+GET /api/kiosk/admin-panel/reports/transactions/
 ```
 
 **Query Parameters:**
@@ -632,7 +632,7 @@ GET /api/admin/reports/transactions/
 
 #### گزارش محصولات
 ```http
-GET /api/admin/reports/products/
+GET /api/kiosk/admin-panel/reports/products/
 ```
 
 **Query Parameters:**
@@ -655,7 +655,7 @@ GET /api/admin/reports/products/
 
 #### گزارش موجودی
 ```http
-GET /api/admin/reports/stocks/
+GET /api/kiosk/admin-panel/reports/stocks/
 ```
 
 **Response:**
@@ -678,70 +678,12 @@ GET /api/admin/reports/stocks/
 
 ---
 
-### Backups API
-
-#### لیست Backup ها
-```http
-GET /api/admin/backups/
-```
-
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "backup_type": "full",
-    "file_path": "/media/backups/backup_2024-01-01.sql",
-    "file_size": 1048576,
-    "status": "completed",
-    "started_at": "2024-01-01T00:00:00Z",
-    "completed_at": "2024-01-01T00:05:00Z"
-  }
-]
-```
-
-#### ایجاد Backup دستی
-```http
-POST /api/admin/backups/create/
-```
-
-**Request Body:**
-```json
-{
-  "backup_type": "full"
-}
-```
-
-**Response:**
-```json
-{
-  "id": 1,
-  "status": "pending",
-  "message": "Backup started"
-}
-```
-
-#### دانلود Backup
-```http
-GET /api/admin/backups/{id}/download/
-```
-
-**Response:** فایل Backup
-
-#### حذف Backup
-```http
-DELETE /api/admin/backups/{id}/
-```
-
-**Response:** `204 No Content`
-
----
 
 ### Logs API
 
 #### لیست لاگ‌های سیستم
 ```http
-GET /api/admin/logs/system/
+GET /api/kiosk/admin-panel/logs/system/
 ```
 
 **Query Parameters:**
@@ -772,7 +714,7 @@ GET /api/admin/logs/system/
 
 #### لاگ‌های تراکنش
 ```http
-GET /api/admin/logs/transactions/
+GET /api/kiosk/admin-panel/logs/transactions/
 ```
 
 **Query Parameters:**

@@ -9,9 +9,8 @@
 6. [مرحله 5: Payment Module](#مرحله-5-payment-module)
 7. [مرحله 6: Logs Module](#مرحله-6-logs-module)
 8. [مرحله 7: Admin Panel](#مرحله-7-admin-panel)
-9. [مرحله 8: Backup System](#مرحله-8-backup-system)
-10. [مرحله 9: Testing و Documentation](#مرحله-9-testing-و-documentation)
-11. [مرحله 10: Deployment](#مرحله-10-deployment)
+9. [مرحله 8: Testing و Documentation](#مرحله-8-testing-و-documentation)
+10. [مرحله 9: Deployment](#مرحله-9-deployment)
 
 ---
 
@@ -499,60 +498,7 @@
 
 ---
 
-## مرحله 8: Backup System
-
-### 8.1 Models
-- [ ] ایجاد `apps/core/backup/models.py`
-  - [ ] Backup Model
-- [ ] Migrations: `python manage.py makemigrations core`
-- [ ] Migrate: `python manage.py migrate core`
-
-### 8.2 Backup Manager
-- [ ] ایجاد `apps/core/backup/manager.py`
-- [ ] پیاده‌سازی Backup Logic:
-  - [ ] Full Backup
-  - [ ] Incremental Backup
-  - [ ] Database Dump
-  - [ ] Media Files Backup
-
-### 8.3 Backup Storage
-- [ ] ایجاد `apps/core/backup/storage.py`
-- [ ] پیاده‌سازی Local Storage
-- [ ] آماده برای S3 Storage (اختیاری)
-
-### 8.4 Celery Tasks
-- [ ] نصب و تنظیم Celery
-- [ ] نصب و تنظیم Redis
-- [ ] ایجاد `apps/core/backup/tasks.py`
-- [ ] پیاده‌سازی Scheduled Backup Tasks
-- [ ] تنظیم Celery Beat
-
-### 8.5 API - Backups (Admin)
-- [ ] ایجاد `apps/admin_panel/api/backups/serializers.py`
-- [ ] ایجاد `apps/admin_panel/api/backups/backups.py` (ViewSet)
-- [ ] ایجاد `apps/admin_panel/api/backups/urls.py`
-- [ ] اضافه کردن Manual Backup Action
-- [ ] اضافه کردن Download Backup Action
-- [ ] تست API
-
-### 8.6 Cleanup Task
-- [ ] پیاده‌سازی Cleanup Old Backups Task
-- [ ] تنظیم در Celery Beat
-
-### 8.7 Tests
-- [ ] ایجاد `apps/core/backup/tests/test_manager.py`
-- [ ] ایجاد `apps/core/backup/tests/test_tasks.py`
-- [ ] تست Backup و Restore
-
-**خروجی این مرحله:**
-- Backup System کامل
-- Scheduled Backups کار می‌کند
-- Manual Backup از Admin Panel
-- Old Backups Cleanup
-
----
-
-## مرحله 9: Testing و Documentation
+## مرحله 8: Testing و Documentation
 
 ### 9.1 Unit Tests
 - [ ] تکمیل تمام Unit Tests
@@ -596,7 +542,7 @@
 
 ---
 
-## مرحله 10: Deployment
+## مرحله 9: Deployment
 
 ### 10.1 Production Settings
 - [ ] بررسی `config/settings/production.py`
@@ -627,21 +573,15 @@
 - [ ] تنظیم SSL Certificate
 - [ ] تنظیم Domain
 
-### 10.6 Celery Setup
-- [ ] تنظیم Celery Worker
-- [ ] تنظیم Celery Beat
-- [ ] تست Background Tasks
-
-### 10.7 Monitoring
+### 10.6 Monitoring
 - [ ] تنظیم Logging
 - [ ] تنظیم Error Tracking (Sentry - اختیاری)
 - [ ] تنظیم Health Check Endpoint
 
-### 10.8 Final Testing
+### 10.7 Final Testing
 - [ ] تست تمام Endpoints در Production
 - [ ] تست Payment Flow
 - [ ] تست Admin Panel
-- [ ] تست Backup System
 
 **خروجی این مرحله:**
 - سیستم در Production اجرا می‌شود
@@ -684,7 +624,6 @@
 - [ ] تمام Tests پاس می‌شوند
 - [ ] Documentation کامل است
 - [ ] Production Settings تنظیم شده
-- [ ] Backup System کار می‌کند
 - [ ] Logging کامل است
 - [ ] Security Settings بررسی شده
 - [ ] Performance بهینه شده

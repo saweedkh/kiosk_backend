@@ -32,34 +32,32 @@
 - ✅ مشاهده و مدیریت سفارشات
 - ✅ گزارش‌گیری کامل (فروش، تراکنش‌ها، محصولات، موجودی)
 - ✅ مدیریت لاگ‌های سیستم و تراکنش‌ها
-- ✅ سیستم Backup خودکار
-- ✅ تنظیمات Gateway پرداخت
+- ✅ تنظیمات Gateway پرداخت (از طریق Environment Variables)
 
 ### ویژگی‌های فنی
 - ✅ Session-based Authentication برای کیوسک
 - ✅ Django Session Authentication برای ادمین
 - ✅ مدیریت موجودی با تاریخچه تغییرات
-- ✅ لاگ کامل تمام تراکنش‌ها و عملیات
-- ✅ Backup خودکار روزانه و Incremental
-- ✅ تولید فاکتور PDF
-- ✅ API Documentation با Swagger/OpenAPI
+- ✅ لاگ کامل تمام تراکنش‌ها و عملیات (Console و File-based)
+- ✅ تولید فاکتور PDF و JSON
+- ✅ معماری Layered (API, Service, Selector, Model)
+- ✅ Modular API Structure
 
 ---
 
 ## تکنولوژی‌ها
 
 ### Backend
-- **Django 4.2+**: Framework اصلی
-- **Django REST Framework**: برای API
+- **Django 4.2.16**: Framework اصلی
+- **Django REST Framework 3.15.2**: برای API
 - **PostgreSQL**: Database
-- **Celery**: برای Background Tasks
-- **Redis**: برای Celery Broker
-- **ReportLab**: برای تولید PDF
+- **ReportLab 4.2.5**: برای تولید PDF
 
 ### Tools
-- **django-cors-headers**: برای CORS
-- **django-filter**: برای Filtering
-- **drf-spectacular**: برای API Documentation (اختیاری)
+- **django-cors-headers 4.6.0**: برای CORS
+- **django-filter 24.3**: برای Filtering
+- **python-dotenv 1.0.1**: برای مدیریت Environment Variables
+- **Pillow 10.4.0**: برای پردازش تصاویر
 
 ---
 
@@ -68,7 +66,6 @@
 ### نرم‌افزار
 - Python 3.9+
 - PostgreSQL 12+
-- Redis 6+
 - Virtual Environment (venv یا virtualenv)
 
 ### Python Packages
@@ -80,8 +77,8 @@
 
 ### 1. Clone پروژه
 ```bash
-git clone <repository-url>
-cd kiosk
+git clone https://github.com/saweedkh/kiosk_backend.git
+cd kiosk_backend
 ```
 
 ### 2. ایجاد Virtual Environment
@@ -94,6 +91,7 @@ venv\Scripts\activate  # Windows
 
 ### 3. نصب Dependencies
 ```bash
+pip install -r requirements/base.txt
 pip install -r requirements/development.txt
 ```
 
@@ -118,14 +116,23 @@ cp .env.example .env
 
 ویرایش `.env`:
 ```env
-SECRET_KEY=your-secret-key-here
+SECRET_KEY=your-secret-key-here-change-in-production
 DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+
 DATABASE_NAME=kiosk_db
 DATABASE_USER=kiosk_user
 DATABASE_PASSWORD=your_password
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
-REDIS_URL=redis://localhost:6379/0
+
+PAYMENT_GATEWAY_NAME=mock
+PAYMENT_GATEWAY_ACTIVE=True
+PAYMENT_GATEWAY_API_KEY=mock_api_key_123
+PAYMENT_GATEWAY_API_SECRET=mock_api_secret_abc
+PAYMENT_GATEWAY_MERCHANT_ID=mock_merchant_id_xyz
+PAYMENT_GATEWAY_TERMINAL_ID=mock_terminal_id_789
+PAYMENT_GATEWAY_CALLBACK_URL=http://localhost:8000/api/kiosk/payment/verify/
 ```
 
 ### 6. اجرای Migrations
@@ -141,21 +148,6 @@ python manage.py createsuperuser
 ### 8. جمع‌آوری Static Files
 ```bash
 python manage.py collectstatic --noinput
-```
-
-### 9. راه‌اندازی Redis
-```bash
-redis-server
-```
-
-### 10. راه‌اندازی Celery Worker
-```bash
-celery -A config worker -l info
-```
-
-### 11. راه‌اندازی Celery Beat (برای Scheduled Tasks)
-```bash
-celery -A config beat -l info
 ```
 
 ---
@@ -199,15 +191,14 @@ kiosk/
 در `config/settings/base.py` یا `.env` تنظیم کنید.
 
 ### Payment Gateway
-برای تنظیم Gateway پرداخت:
-1. از پنل ادمین به بخش Gateway Config بروید
-2. یا از API استفاده کنید: `POST /api/admin/payment/gateway/`
-
-### Backup Settings
-در `apps/core/backup/manager.py` می‌توانید تنظیمات Backup را تغییر دهید:
-- فاصله زمانی Backup
-- تعداد Backup های نگهداری شده
-- مسیر ذخیره‌سازی
+برای تنظیم Gateway پرداخت، مقادیر را در فایل `.env` تنظیم کنید:
+- `PAYMENT_GATEWAY_NAME`: نام Gateway (مثلاً `mock`)
+- `PAYMENT_GATEWAY_ACTIVE`: فعال/غیرفعال بودن Gateway
+- `PAYMENT_GATEWAY_API_KEY`: کلید API
+- `PAYMENT_GATEWAY_API_SECRET`: Secret Key
+- `PAYMENT_GATEWAY_MERCHANT_ID`: شناسه Merchant
+- `PAYMENT_GATEWAY_TERMINAL_ID`: شناسه Terminal
+- `PAYMENT_GATEWAY_CALLBACK_URL`: URL برای Callback
 
 ---
 
@@ -221,10 +212,7 @@ python manage.py runserver
 پروژه در `http://localhost:8000` اجرا می‌شود.
 
 ### API Documentation
-بعد از راه‌اندازی، به آدرس زیر بروید:
-```
-http://localhost:8000/api/docs/
-```
+مستندات کامل API در فایل [API_DOCUMENTATION.md](./API_DOCUMENTATION.md) موجود است.
 
 ### Admin Panel
 ```
@@ -239,7 +227,7 @@ http://localhost:8000/admin/
 
 ### Base URLs
 - **Kiosk APIs**: `/api/kiosk/`
-- **Admin APIs**: `/api/admin/`
+- **Admin APIs**: `/api/kiosk/admin-panel/`
 
 ### مثال استفاده
 
@@ -321,34 +309,11 @@ server {
 }
 ```
 
-### Celery در Production
-```bash
-# Worker
-celery -A config worker --loglevel=info --detach
-
-# Beat
-celery -A config beat --loglevel=info --detach
-```
-
 ### با Supervisor
 مثال Configuration:
 ```ini
 [program:kiosk]
 command=/path/to/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000
-directory=/path/to/kiosk
-user=www-data
-autostart=true
-autorestart=true
-
-[program:celery_worker]
-command=/path/to/venv/bin/celery -A config worker --loglevel=info
-directory=/path/to/kiosk
-user=www-data
-autostart=true
-autorestart=true
-
-[program:celery_beat]
-command=/path/to/venv/bin/celery -A config beat --loglevel=info
 directory=/path/to/kiosk
 user=www-data
 autostart=true
@@ -381,19 +346,16 @@ python manage.py makemigrations
 python manage.py migrate
 ```
 
-### مشکل Celery
-- بررسی کنید Redis در حال اجرا باشد
-- بررسی کنید `REDIS_URL` در `.env` درست باشد
-
 ---
 
 ## Contributing
 
-1. Fork پروژه
-2. ایجاد Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit تغییرات (`git commit -m 'Add some AmazingFeature'`)
-4. Push به Branch (`git push origin feature/AmazingFeature`)
-5. ایجاد Pull Request
+1. Fork پروژه از [GitHub Repository](https://github.com/saweedkh/kiosk_backend)
+2. Clone پروژه Fork شده
+3. ایجاد Branch (`git checkout -b feature/AmazingFeature`)
+4. Commit تغییرات (`git commit -m 'Add some AmazingFeature'`)
+5. Push به Branch (`git push origin feature/AmazingFeature`)
+6. ایجاد Pull Request در GitHub
 
 ---
 
@@ -406,7 +368,7 @@ python manage.py migrate
 ## Support
 
 برای پشتیبانی و سوالات:
-- ایجاد Issue در Repository
+- ایجاد Issue در [GitHub Repository](https://github.com/saweedkh/kiosk_backend)
 - تماس با تیم توسعه
 
 ---
@@ -419,9 +381,10 @@ python manage.py migrate
 - Cart Module
 - Orders Module
 - Payment Module (Mock Gateway)
-- Logs Module
+- Logs Module (Console و File-based)
 - Admin Panel
-- Backup System
+- Modular API Structure
+- Layered Architecture
 
 ---
 
