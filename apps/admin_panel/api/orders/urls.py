@@ -1,13 +1,8 @@
-from django.urls import path
-from apps.admin_panel.api.orders.orders_apis import (
-    AdminOrderListAPIView,
-    AdminOrderRetrieveAPIView,
-    AdminOrderUpdateStatusAPIView
-)
+from django.urls import path, include
+from apps.admin_panel.api.orders.orders_apis import AdminOrderListAPIView
 
 urlpatterns = [
     path('', AdminOrderListAPIView.as_view(), name='admin-order-list'),
-    path('<int:pk>/', AdminOrderRetrieveAPIView.as_view(), name='admin-order-retrieve'),
-    path('<int:pk>/update-status/', AdminOrderUpdateStatusAPIView.as_view(), name='admin-order-update-status'),
+    path('<int:pk>/', include('apps.admin_panel.api.orders.id.urls')),
 ]
 

@@ -1,17 +1,50 @@
+from typing import Optional
 import json
 import time
 import logging
+from django.http import HttpRequest, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 
 logger = logging.getLogger('kiosk.request')
 
 
 class RequestLoggingMiddleware(MiddlewareMixin):
-    def process_request(self, request):
+    """
+    Middleware for logging API requests and responses.
+    
+    This middleware logs all API requests with method, path, status code,
+    duration, user, session, and request body (for POST/PUT/PATCH).
+    """
+    
+    def process_request(self, request: HttpRequest) -> Optional[HttpResponse]:
+        """
+        Process incoming request and record start time.
+        
+        Args:
+            request: HTTP request object
+            
+        Returns:
+            Optional[HttpResponse]: None to continue processing
+        """
         request._log_start_time = time.time()
         return None
     
-    def process_response(self, request, response):
+    def process_response(self, request: HttpRequest, response: HttpResponse) -> HttpResponse:
+        """
+        Process outgoing response and log request details.
+        
+        Logs are created with different levels based on status code:
+        - 500+: error
+        - 400-499: warning
+        - 200-399: info
+        
+        Args:
+            request: HTTP request object
+            response: HTTP response object
+            
+        Returns:
+            HttpResponse: Response object
+        """
         if hasattr(request, '_log_start_time'):
             duration = time.time() - request._log_start_time
             

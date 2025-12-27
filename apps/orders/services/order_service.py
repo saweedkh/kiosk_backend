@@ -1,3 +1,4 @@
+from typing import Optional
 from django.db import transaction
 from django.utils import timezone
 from apps.orders.models import Order, OrderItem
@@ -9,15 +10,46 @@ from apps.core.exceptions.order import OrderNotFoundException
 
 
 class OrderService:
+    """
+    Order management service.
+    
+    This class contains all business logic related to order processing.
+    """
+    
     @staticmethod
-    def generate_order_number():
+    def generate_order_number() -> str:
+        """
+        Generate unique order number.
+        
+        Format: ORD-YYYYMMDDHHMMSS-XXXX
+        Where XXXX is microsecond suffix for uniqueness.
+        
+        Returns:
+            str: Unique order number
+        """
         timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
         random_suffix = str(timezone.now().microsecond)[:4]
         return f"ORD-{timestamp}-{random_suffix}"
     
     @staticmethod
     @transaction.atomic
-    def create_order_from_cart(session_key):
+    def create_order_from_cart(session_key: str) -> Order:
+        """
+        Create order from current cart items.
+        
+        This method creates an order from cart, decreases stock quantities,
+        and clears the cart items.
+        
+        Args:
+            session_key: Django session key
+            
+        Returns:
+            Order: Created order instance
+            
+        Raises:
+            ValueError: If cart is empty
+            InsufficientStockException: If insufficient stock for any item
+        """
         cart = CartSelector.get_cart_by_session(session_key)
         if not cart or not cart.items.exists():
             raise ValueError('Cart is empty')
@@ -63,7 +95,20 @@ class OrderService:
     
     @staticmethod
     @transaction.atomic
-    def update_order_status(order_id, status):
+    def update_order_status(order_id: int, status: str) -> Order:
+        """
+        Update order status.
+        
+        Args:
+            order_id: Order ID
+            status: New status (e.g., 'pending', 'processing', 'completed', 'cancelled')
+            
+        Returns:
+            Order: Updated order instance
+            
+        Raises:
+            OrderNotFoundException: If order does not exist
+        """
         order = OrderSelector.get_order_by_id(order_id)
         if not order:
             raise OrderNotFoundException()
@@ -87,7 +132,22 @@ class OrderService:
     
     @staticmethod
     @transaction.atomic
-    def update_payment_status(order_id, payment_status):
+    def update_payment_status(order_id: int, payment_status: str) -> Order:
+        """
+        Update order payment status.
+        
+        If payment_status is 'paid', order status is also set to 'paid'.
+        
+        Args:
+            order_id: Order ID
+            payment_status: New payment status (e.g., 'pending', 'paid', 'failed')
+            
+        Returns:
+            Order: Updated order instance
+            
+        Raises:
+            OrderNotFoundException: If order does not exist
+        """
         order = OrderSelector.get_order_by_id(order_id)
         if not order:
             raise OrderNotFoundException()
@@ -115,7 +175,20 @@ class OrderService:
     
     @staticmethod
     @transaction.atomic
-    def cancel_order(order_id):
+    def cancel_order(order_id: int) -> Order:
+        """
+        Cancel order and restore stock quantities.
+        
+        Args:
+            order_id: Order ID to cancel
+            
+        Returns:
+            Order: Cancelled order instance
+            
+        Raises:
+            OrderNotFoundException: If order does not exist
+            ValueError: If order status is 'completed' or 'cancelled'
+        """
         order = OrderSelector.get_order_by_id(order_id)
         if not order:
             raise OrderNotFoundException()

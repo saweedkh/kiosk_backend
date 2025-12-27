@@ -26,6 +26,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+      args:
+        BUILDKIT_INLINE_CACHE: 1
     container_name: kiosk_web_dev
     command: python manage.py runserver 0.0.0.0:8000
     volumes:

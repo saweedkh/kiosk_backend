@@ -1,3 +1,4 @@
+from typing import Dict, Any
 import json
 from io import BytesIO
 from reportlab.lib import colors
@@ -11,12 +12,58 @@ from django.utils import timezone
 
 
 class InvoiceGenerator:
+    """
+    Invoice generation utility.
+    
+    This class provides methods for generating invoices in JSON and PDF formats.
+    """
+    
     @staticmethod
-    def generate_json(invoice_data):
+    def generate_json(invoice_data: Dict[str, Any]) -> str:
+        """
+        Generate invoice in JSON format.
+        
+        Args:
+            invoice_data: Dictionary containing invoice data
+                - invoice_number: Invoice number
+                - order_number: Order number
+                - created_at: Creation date (ISO format)
+                - total_amount: Total amount
+                - status: Order status
+                - payment_status: Payment status
+                - items: List of order items
+                    - product_name: Product name
+                    - quantity: Quantity
+                    - unit_price: Unit price
+                    - subtotal: Subtotal
+                    
+        Returns:
+            str: JSON string representation of invoice
+        """
         return json.dumps(invoice_data, ensure_ascii=False, indent=2)
     
     @staticmethod
-    def generate_pdf(invoice_data):
+    def generate_pdf(invoice_data: Dict[str, Any]) -> BytesIO:
+        """
+        Generate invoice in PDF format.
+        
+        Args:
+            invoice_data: Dictionary containing invoice data
+                - invoice_number: Invoice number
+                - order_number: Order number
+                - created_at: Creation date (ISO format)
+                - total_amount: Total amount
+                - status: Order status
+                - payment_status: Payment status
+                - items: List of order items
+                    - product_name: Product name
+                    - quantity: Quantity
+                    - unit_price: Unit price
+                    - subtotal: Subtotal
+                    
+        Returns:
+            BytesIO: PDF file buffer
+        """
         
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)

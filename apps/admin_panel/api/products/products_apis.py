@@ -3,26 +3,85 @@ from rest_framework.response import Response
 from apps.products.models import Product
 from apps.admin_panel.api.products.products_serializers import (
     AdminProductSerializer,
-    AdminProductListSerializer,
-    UpdateStockSerializer
+    AdminProductListSerializer
 )
 from apps.admin_panel.api.products.products_filters import AdminProductFilter
 from apps.admin_panel.api.permissions import IsAdminUser
 from apps.products.services.product_service import ProductService
-from apps.products.services.stock_service import StockService
+from apps.core.api.schema import custom_extend_schema
+from apps.core.api.parameter_serializers import AdminProductQuerySerializer, PaginationQuerySerializer
+from apps.core.api.status_codes import ResponseStatusCodes
 
 
 class AdminProductListAPIView(generics.ListCreateAPIView):
+    """
+    API endpoint for listing and creating products (Admin only).
+    
+    GET: Returns paginated list of all products with filtering support.
+    POST: Creates a new product.
+    """
     queryset = Product.objects.select_related('category').all()
     permission_classes = [IsAdminUser]
     filterset_class = AdminProductFilter
     
     def get_serializer_class(self):
+        """
+        Return appropriate serializer class based on request method.
+        
+        Returns:
+            Serializer: AdminProductListSerializer for GET, AdminProductSerializer for POST
+        """
         if self.request.method == 'GET':
             return AdminProductListSerializer
         return AdminProductSerializer
     
-    def create(self, request, *args, **kwargs):
+    @custom_extend_schema(
+        resource_name="AdminProductList",
+        parameters=[AdminProductQuerySerializer, PaginationQuerySerializer],
+        response_serializer=AdminProductListSerializer,
+        status_codes=[
+            ResponseStatusCodes.OK_PAGINATED,
+            ResponseStatusCodes.BAD_REQUEST,
+            ResponseStatusCodes.UNAUTHORIZED,
+            ResponseStatusCodes.FORBIDDEN,
+        ],
+        summary="List Products (Admin)",
+        description="Get a paginated list of all products with filtering support. Admin only.",
+        tags=["Admin - Products"],
+        operation_id="admin_products_list",
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+    
+    @custom_extend_schema(
+        resource_name="AdminProductCreate",
+        parameters=[AdminProductSerializer],
+        request_serializer=AdminProductSerializer,
+        response_serializer=AdminProductSerializer,
+        status_codes=[
+            ResponseStatusCodes.CREATED,
+            ResponseStatusCodes.BAD_REQUEST,
+            ResponseStatusCodes.UNAUTHORIZED,
+            ResponseStatusCodes.FORBIDDEN,
+        ],
+        summary="Create Product (Admin)",
+        description="Create a new product. Admin only.",
+        tags=["Admin - Products"],
+        operation_id="admin_products_create",
+    )
+    def post(self, request, *args, **kwargs):
+        """
+        Create a new product.
+        
+        Args:
+            request: HTTP request object with product data
+            
+        Returns:
+            Response: Created product data
+            
+        Raises:
+            ValidationError: If data is invalid
+        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         product = ProductService.create_product(serializer.validated_data)
@@ -30,39 +89,4 @@ class AdminProductListAPIView(generics.ListCreateAPIView):
             AdminProductSerializer(product).data,
             status=status.HTTP_201_CREATED
         )
-
-
-class AdminProductRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Product.objects.select_related('category').all()
-    serializer_class = AdminProductSerializer
-    permission_classes = [IsAdminUser]
-    
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        product = ProductService.update_product(instance, serializer.validated_data)
-        return Response(AdminProductSerializer(product).data)
-
-
-class AdminProductUpdateStockAPIView(generics.GenericAPIView):
-    queryset = Product.objects.all()
-    serializer_class = UpdateStockSerializer
-    permission_classes = [IsAdminUser]
-    
-    def put(self, request, pk):
-        product = self.get_object()
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        StockService.update_stock(
-            product_id=product.id,
-            new_quantity=serializer.validated_data['stock_quantity'],
-            change_type='manual',
-            admin_user=request.user,
-            notes=serializer.validated_data.get('notes', '')
-        )
-        
-        product.refresh_from_db()
-        return Response(AdminProductSerializer(product).data)
 

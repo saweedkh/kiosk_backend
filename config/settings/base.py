@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'django_filters',
+    'drf_spectacular',
     
     'apps.products',
     'apps.cart',
@@ -126,6 +127,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
     ],
     'EXCEPTION_HANDLER': 'apps.core.api.exceptions.api_exception_handler',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 CORS_ALLOWED_ORIGINS = [
@@ -185,5 +187,56 @@ PAYMENT_GATEWAY_CONFIG = {
     'merchant_id': os.getenv('PAYMENT_GATEWAY_MERCHANT_ID', ''),
     'terminal_id': os.getenv('PAYMENT_GATEWAY_TERMINAL_ID', ''),
     'callback_url': os.getenv('PAYMENT_GATEWAY_CALLBACK_URL', ''),
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Kiosk Backend API',
+    'DESCRIPTION': 'API documentation for Kiosk Backend - Store management system with card reader payment integration',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX': '/api/kiosk/',
+    'TAGS': [
+        {'name': 'Products', 'description': 'Product listing and details endpoints'},
+        {'name': 'Categories', 'description': 'Category listing endpoints'},
+        {'name': 'Cart', 'description': 'Shopping cart management endpoints'},
+        {'name': 'Orders', 'description': 'Order management endpoints'},
+        {'name': 'Invoices', 'description': 'Invoice generation and download endpoints'},
+        {'name': 'Payment', 'description': 'Payment processing endpoints'},
+        {'name': 'Transactions', 'description': 'Payment transaction endpoints'},
+        {'name': 'Admin - Auth', 'description': 'Admin authentication endpoints'},
+        {'name': 'Admin - Products', 'description': 'Admin product management endpoints'},
+        {'name': 'Admin - Categories', 'description': 'Admin category management endpoints'},
+        {'name': 'Admin - Orders', 'description': 'Admin order management endpoints'},
+        {'name': 'Admin - Reports', 'description': 'Admin reporting endpoints'},
+    ],
+    'COMPONENT_SPLIT_REQUEST': True,
+    'COMPONENT_NO_READ_ONLY_REQUIRED': True,
+    'SORT_OPERATIONS': True,
+    'SORT_TAGS': True,
+    'TAG_ORDER': [
+        'Products',
+        'Categories',
+        'Cart',
+        'Orders',
+        'Invoices',
+        'Payment',
+        'Transactions',
+        'Admin - Auth',
+        'Admin - Products',
+        'Admin - Categories',
+        'Admin - Orders',
+        'Admin - Reports',
+    ],
+    'APPEND_COMPONENTS': {
+        'securitySchemes': {
+            'SessionAuthentication': {
+                'type': 'apiKey',
+                'in': 'cookie',
+                'name': 'sessionid',
+                'description': 'Session-based authentication. Login via /api/kiosk/admin-panel/auth/login/'
+            }
+        }
+    },
+    'SECURITY': [{'SessionAuthentication': []}],
 }
 

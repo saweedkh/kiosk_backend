@@ -1,8 +1,26 @@
+from typing import Any
+from rest_framework import serializers
 from apps.logs.services.log_service import LogService
 
 
 class LoggingMixin:
-    def perform_create(self, serializer):
+    """
+    Mixin for automatic logging of CRUD operations in ViewSets.
+    
+    This mixin automatically logs create, update, and delete operations
+    with user and instance information.
+    """
+    
+    def perform_create(self, serializer: serializers.Serializer) -> Any:
+        """
+        Override perform_create to log creation operation.
+        
+        Args:
+            serializer: DRF serializer instance
+            
+        Returns:
+            Any: Created instance
+        """
         instance = serializer.save()
         LogService.log_info(
             log_type='admin_action',
@@ -12,7 +30,16 @@ class LoggingMixin:
         )
         return instance
     
-    def perform_update(self, serializer):
+    def perform_update(self, serializer: serializers.Serializer) -> Any:
+        """
+        Override perform_update to log update operation.
+        
+        Args:
+            serializer: DRF serializer instance
+            
+        Returns:
+            Any: Updated instance
+        """
         instance = serializer.save()
         LogService.log_info(
             log_type='admin_action',
@@ -22,7 +49,13 @@ class LoggingMixin:
         )
         return instance
     
-    def perform_destroy(self, instance):
+    def perform_destroy(self, instance: Any) -> None:
+        """
+        Override perform_destroy to log deletion operation.
+        
+        Args:
+            instance: Instance to be deleted
+        """
         instance_id = instance.id
         model_name = instance.__class__.__name__
         instance.delete()

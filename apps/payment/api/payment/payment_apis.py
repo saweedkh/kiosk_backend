@@ -9,12 +9,50 @@ from apps.payment.api.payment.payment_serializers import (
 from apps.payment.services.payment_service import PaymentService
 from apps.orders.selectors.order_selector import OrderSelector
 from apps.orders.services.invoice_service import InvoiceService
+from apps.core.api.schema import custom_extend_schema
+from apps.core.api.status_codes import ResponseStatusCodes
 
 
 class PaymentInitiateAPIView(generics.GenericAPIView):
+    """
+    API endpoint for initiating payment transaction.
+    
+    Initiates a payment transaction with the payment gateway for an order.
+    """
     serializer_class = PaymentInitiateSerializer
     
+    @custom_extend_schema(
+        resource_name="PaymentInitiate",
+        parameters=[PaymentInitiateSerializer],
+        request_serializer=PaymentInitiateSerializer,
+        response_serializer=PaymentResponseSerializer,
+        status_codes=[
+            ResponseStatusCodes.CREATED,
+            ResponseStatusCodes.BAD_REQUEST,
+            ResponseStatusCodes.NOT_FOUND,
+            ResponseStatusCodes.SERVER_ERROR,
+            ResponseStatusCodes.SERVICE_UNAVAILABLE,
+        ],
+        summary="Initiate Payment",
+        description="Initiate a payment transaction with the payment gateway for an order. Returns transaction details including transaction ID.",
+        tags=["Payment"],
+        operation_id="payment_initiate"
+    )
     def post(self, request):
+        """
+        Initiate payment for an order.
+        
+        Args:
+            request: HTTP request object with order_id and amount
+            
+        Returns:
+            Response: Transaction data with status
+            
+        Raises:
+            404: If order not found
+            GatewayException: If payment gateway is not active
+            PaymentFailedException: If payment initiation fails
+        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -44,9 +82,44 @@ class PaymentInitiateAPIView(generics.GenericAPIView):
 
 
 class PaymentVerifyAPIView(generics.GenericAPIView):
+    """
+    API endpoint for verifying payment transaction.
+    
+    Verifies a payment transaction with the payment gateway and updates order status.
+    """
     serializer_class = PaymentVerifySerializer
     
+    @custom_extend_schema(
+        resource_name="PaymentVerify",
+        parameters=[PaymentVerifySerializer],
+        request_serializer=PaymentVerifySerializer,
+        response_serializer=PaymentResponseSerializer,
+        status_codes=[
+            ResponseStatusCodes.OK,
+            ResponseStatusCodes.BAD_REQUEST,
+            ResponseStatusCodes.NOT_FOUND,
+            ResponseStatusCodes.SERVER_ERROR,
+            ResponseStatusCodes.SERVICE_UNAVAILABLE,
+        ],
+        summary="Verify Payment",
+        description="Verify a payment transaction with the payment gateway. Updates order status based on verification result.",
+        tags=["Payment"],
+        operation_id="payment_verify"
+    )
     def post(self, request):
+        """
+        Verify payment transaction.
+        
+        Args:
+            request: HTTP request object with transaction_id
+            
+        Returns:
+            Response: Verified transaction data
+            
+        Raises:
+            GatewayException: If transaction not found
+            PaymentFailedException: If payment verification fails
+        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -68,9 +141,43 @@ class PaymentVerifyAPIView(generics.GenericAPIView):
 
 
 class PaymentStatusAPIView(generics.GenericAPIView):
+    """
+    API endpoint for checking payment status.
+    
+    Gets the current payment status from the payment gateway.
+    """
     serializer_class = PaymentStatusSerializer
     
+    @custom_extend_schema(
+        resource_name="PaymentStatus",
+        parameters=[PaymentStatusSerializer],
+        request_serializer=PaymentStatusSerializer,
+        response_serializer=PaymentResponseSerializer,
+        status_codes=[
+            ResponseStatusCodes.OK,
+            ResponseStatusCodes.BAD_REQUEST,
+            ResponseStatusCodes.NOT_FOUND,
+            ResponseStatusCodes.SERVER_ERROR,
+            ResponseStatusCodes.SERVICE_UNAVAILABLE,
+        ],
+        summary="Get Payment Status",
+        description="Get the current payment status from the payment gateway for a transaction.",
+        tags=["Payment"],
+        operation_id="payment_status"
+    )
     def post(self, request):
+        """
+        Get payment status.
+        
+        Args:
+            request: HTTP request object with transaction_id
+            
+        Returns:
+            Response: Transaction status data
+            
+        Raises:
+            GatewayException: If transaction not found or status check fails
+        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         

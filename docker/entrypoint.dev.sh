@@ -28,7 +28,15 @@ done
 echo "Database is ready!"
 
 echo "Running migrations..."
-python manage.py migrate --noinput
+MIGRATE_OUTPUT=$(python manage.py migrate --noinput 2>&1)
+echo "$MIGRATE_OUTPUT"
+
+if echo "$MIGRATE_OUTPUT" | grep -q "have changes that are not yet reflected in a migration"; then
+    echo ""
+    echo "⚠️  Warning: Some models have changes that are not yet reflected in migrations."
+    echo "   Run 'make makemigrations-dev' to create migrations, then restart the container."
+    echo ""
+fi
 
 echo "Starting development server..."
 exec "$@"

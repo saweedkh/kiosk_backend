@@ -1,3 +1,4 @@
+from typing import Dict, Any
 from django.db import transaction
 from django.utils import timezone
 from django.core.files.base import ContentFile
@@ -10,15 +11,45 @@ from apps.logs.services.log_service import LogService
 
 
 class InvoiceService:
+    """
+    Invoice generation service.
+    
+    This class handles invoice creation, including PDF and JSON generation.
+    """
+    
     @staticmethod
-    def generate_invoice_number():
+    def generate_invoice_number() -> str:
+        """
+        Generate unique invoice number.
+        
+        Format: INV-YYYYMMDDHHMMSS-XXXX
+        Where XXXX is microsecond suffix for uniqueness.
+        
+        Returns:
+            str: Unique invoice number
+        """
         timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
         random_suffix = str(timezone.now().microsecond)[:4]
         return f"INV-{timestamp}-{random_suffix}"
     
     @staticmethod
     @transaction.atomic
-    def create_invoice(order_id):
+    def create_invoice(order_id: int) -> Invoice:
+        """
+        Create invoice for an order.
+        
+        If invoice already exists for the order, returns existing invoice.
+        Generates both PDF and JSON formats.
+        
+        Args:
+            order_id: Order ID
+            
+        Returns:
+            Invoice: Created or existing invoice instance
+            
+        Raises:
+            ValueError: If order not found
+        """
         order = OrderSelector.get_order_by_id(order_id)
         if not order:
             raise ValueError('Order not found')
@@ -57,7 +88,26 @@ class InvoiceService:
         return invoice
     
     @staticmethod
-    def get_invoice_data(order_id):
+    def get_invoice_data(order_id: int) -> Dict[str, Any]:
+        """
+        Get invoice data dictionary from order.
+        
+        Args:
+            order_id: Order ID
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing invoice data
+                - invoice_number: Invoice number (if exists)
+                - order_number: Order number
+                - created_at: Order creation date (ISO format)
+                - total_amount: Total order amount
+                - status: Order status
+                - payment_status: Payment status
+                - items: List of order items with details
+                    
+        Raises:
+            ValueError: If order not found
+        """
         order = OrderSelector.get_order_by_id(order_id)
         if not order:
             raise ValueError('Order not found')

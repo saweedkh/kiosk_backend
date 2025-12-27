@@ -1,3 +1,4 @@
+from typing import Dict, Any
 from django.db import transaction
 from django.utils import timezone
 from apps.payment.models import Transaction
@@ -9,15 +10,49 @@ from apps.core.exceptions.payment import PaymentFailedException
 
 
 class PaymentService:
+    """
+    Payment processing service.
+    
+    This class handles all payment-related operations including
+    payment initiation, verification, and status checking.
+    """
+    
     @staticmethod
-    def generate_transaction_id():
+    def generate_transaction_id() -> str:
+        """
+        Generate unique transaction ID.
+        
+        Format: TXN-YYYYMMDDHHMMSS-XXXX
+        Where XXXX is microsecond suffix for uniqueness.
+        
+        Returns:
+            str: Unique transaction ID
+        """
         timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
         random_suffix = str(timezone.now().microsecond)[:4]
         return f"TXN-{timestamp}-{random_suffix}"
     
     @staticmethod
     @transaction.atomic
-    def initiate_payment(order_id: int, amount: int, order_details: dict):
+    def initiate_payment(order_id: int, amount: int, order_details: Dict[str, Any]) -> Transaction:
+        """
+        Initiate payment transaction with payment gateway.
+        
+        Args:
+            order_id: Order ID associated with payment
+            amount: Payment amount in Rial
+            order_details: Dictionary containing order details
+                - order_number: Order number
+                - items: List of order items
+                - customer_info: Customer information (optional)
+                
+        Returns:
+            Transaction: Created transaction instance
+            
+        Raises:
+            GatewayException: If payment gateway is not active
+            PaymentFailedException: If payment initiation fails
+        """
         if not PaymentGatewayAdapter.is_gateway_active():
             raise GatewayException('Payment gateway is not active')
         
@@ -68,7 +103,20 @@ class PaymentService:
     
     @staticmethod
     @transaction.atomic
-    def verify_payment(transaction_id: str):
+    def verify_payment(transaction_id: str) -> Transaction:
+        """
+        Verify payment transaction with payment gateway.
+        
+        Args:
+            transaction_id: Transaction ID to verify
+            
+        Returns:
+            Transaction: Updated transaction instance with verification result
+            
+        Raises:
+            GatewayException: If transaction not found
+            PaymentFailedException: If payment verification fails
+        """
         transaction_obj = TransactionSelector.get_transaction_by_transaction_id(transaction_id)
         if not transaction_obj:
             raise GatewayException('Transaction not found')
@@ -109,7 +157,19 @@ class PaymentService:
             raise PaymentFailedException(f'Failed to verify payment: {str(e)}')
     
     @staticmethod
-    def get_payment_status(transaction_id: str):
+    def get_payment_status(transaction_id: str) -> Transaction:
+        """
+        Get current payment status from payment gateway.
+        
+        Args:
+            transaction_id: Transaction ID to check
+            
+        Returns:
+            Transaction: Transaction instance with updated status
+            
+        Raises:
+            GatewayException: If transaction not found or status check fails
+        """
         transaction_obj = TransactionSelector.get_transaction_by_transaction_id(transaction_id)
         if not transaction_obj:
             raise GatewayException('Transaction not found')
@@ -138,7 +198,23 @@ class PaymentService:
     
     @staticmethod
     @transaction.atomic
-    def handle_webhook(webhook_data: dict):
+    def handle_webhook(webhook_data: Dict[str, Any]) -> Transaction:
+        """
+        Handle payment gateway webhook callback.
+        
+        Args:
+            webhook_data: Dictionary containing webhook data from payment gateway
+                - transaction_id: Transaction ID
+                - status: Payment status
+                - amount: Payment amount
+                - other gateway-specific fields
+                
+        Returns:
+            Transaction: Updated transaction instance
+            
+        Raises:
+            GatewayException: If transaction ID not found in webhook data or transaction not found
+        """
         transaction_id = webhook_data.get('transaction_id')
         if not transaction_id:
             raise GatewayException('Transaction ID not found in webhook data')
