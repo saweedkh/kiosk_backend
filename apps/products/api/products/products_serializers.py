@@ -9,10 +9,19 @@ class ProductListSerializer(serializers.ModelSerializer):
         read_only=True,
         label=_('نام دسته‌بندی')
     )
+    image = serializers.SerializerMethodField()
     
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'price', 'category_name',
+            'id', 'name', 'price', 'category_name', 'category',
             'image', 'stock_quantity', 'is_in_stock'
         ]
+    
+    def get_image(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None

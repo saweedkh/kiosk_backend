@@ -50,8 +50,9 @@ class ProductSearchAPIView(generics.GenericAPIView):
         query = params.get('q', '')
         products = ProductSelector.search_products(query)
         
+        serializer = ProductSearchSerializer(products, many=True, context={'request': request})
         return Response(
-            data=ProductSearchSerializer(products, many=True).data,
+            data=serializer.data,
             status=status.HTTP_200_OK
         )
 
