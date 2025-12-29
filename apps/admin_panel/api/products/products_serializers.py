@@ -1,11 +1,19 @@
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
-from apps.products.models import Product
+from apps.products.models import Category, Product
 
+
+class ProductUpdateSerializerInput(serializers.Serializer):
+    name = serializers.CharField(required=False, label=_('نام'))
+    description = serializers.CharField(required=False, label=_('توضیحات'))
+    price = serializers.IntegerField(required=False, label=_('قیمت'))
+    category = serializers.PrimaryKeyRelatedField(required=False, queryset=Category.objects.filter(is_active=True), label=_('دسته‌بندی'))
+    image = serializers.ImageField(required=False, label=_('تصویر'))
+    stock_quantity = serializers.IntegerField(required=False, label=_('موجودی'))
+    is_active = serializers.BooleanField(required=False, label=_('فعال'))
 
 class AdminProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True, label=_('نام دسته‌بندی'))
-    image = serializers.SerializerMethodField()
     
     class Meta:
         model = Product
@@ -16,13 +24,15 @@ class AdminProductSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'is_in_stock', 'created_at', 'updated_at']
     
-    def get_image(self, obj):
-        if obj.image:
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if instance.image:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
+                representation['image'] = request.build_absolute_uri(instance.image.url)
+            else:
+                representation['image'] = instance.image.url
+        return representation
 
 
 class AdminProductListSerializer(serializers.ModelSerializer):

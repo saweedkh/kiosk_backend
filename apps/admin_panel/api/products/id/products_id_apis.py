@@ -3,7 +3,8 @@ from rest_framework.response import Response
 from apps.products.models import Product
 from apps.admin_panel.api.products.products_serializers import (
     AdminProductSerializer,
-    UpdateStockSerializer
+    UpdateStockSerializer,
+    ProductUpdateSerializerInput
 )
 from apps.admin_panel.api.permissions import IsAdminUser
 from apps.products.services.product_service import ProductService
@@ -44,7 +45,7 @@ class AdminProductRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPI
     
     @custom_extend_schema(
         resource_name="AdminProductUpdate",
-        parameters=[AdminProductSerializer],
+        request=ProductUpdateSerializerInput,
         response_serializer=AdminProductSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -63,7 +64,7 @@ class AdminProductRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPI
     
     @custom_extend_schema(
         resource_name="AdminProductPartialUpdate",
-        parameters=[AdminProductSerializer],
+        request=ProductUpdateSerializerInput,
         response_serializer=AdminProductSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
