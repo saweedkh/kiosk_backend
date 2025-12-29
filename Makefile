@@ -48,7 +48,7 @@ makemigrations-dev:
 	docker-compose -f docker-compose.dev.yml exec web python manage.py makemigrations
 
 createsuperuser-dev:
-	docker-compose -f docker-compose.dev.yml exec web python manage.py createsuperuser
+	docker-compose -f docker-compose.dev.yml run --rm -it --entrypoint python web manage.py createsuperuser
 
 test-dev:
 	docker-compose -f docker-compose.dev.yml exec web python manage.py test
@@ -76,7 +76,7 @@ migrate-prod:
 	docker-compose -f docker-compose.prod.yml exec web python manage.py migrate
 
 createsuperuser-prod:
-	docker-compose -f docker-compose.prod.yml exec web python manage.py createsuperuser
+	docker-compose -f docker-compose.prod.yml run --rm -it --entrypoint python web manage.py createsuperuser
 
 clean-prod:
 	docker-compose -f docker-compose.prod.yml down -v

@@ -6,9 +6,7 @@ from apps.admin_panel.api.orders.orders_serializers import (
 from apps.admin_panel.api.orders.orders_filters import AdminOrderFilter
 from apps.admin_panel.api.permissions import IsAdminUser
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import AdminOrderQuerySerializer, PaginationQuerySerializer
-from apps.core.api.status_codes import ResponseStatusCodes
-from apps.core.api.status_code_mapper import get_admin_status_codes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class AdminOrderListAPIView(generics.ListAPIView):
@@ -25,7 +23,7 @@ class AdminOrderListAPIView(generics.ListAPIView):
     
     @custom_extend_schema(
         resource_name="AdminOrderList",
-        parameters=[AdminOrderQuerySerializer, PaginationQuerySerializer],
+        parameters=[],
         response_serializer=AdminOrderListSerializer,
         status_codes=[
             ResponseStatusCodes.OK_PAGINATED,

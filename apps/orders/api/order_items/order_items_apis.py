@@ -3,8 +3,7 @@ from apps.orders.models import OrderItem
 from apps.orders.api.order_items.order_items_serializers import OrderItemSerializer
 from apps.orders.selectors.order_selector import OrderSelector
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import OrderPathSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class OrderItemListAPIView(generics.ListAPIView):
@@ -17,7 +16,7 @@ class OrderItemListAPIView(generics.ListAPIView):
     
     @custom_extend_schema(
         resource_name="OrderItemList",
-        parameters=[OrderPathSerializer],
+        parameters=[],
         response_serializer=OrderItemSerializer,
         status_codes=[ResponseStatusCodes.OK_ALL],
         summary="List Order Items",

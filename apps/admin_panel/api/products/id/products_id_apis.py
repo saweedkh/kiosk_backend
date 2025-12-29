@@ -9,8 +9,7 @@ from apps.admin_panel.api.permissions import IsAdminUser
 from apps.products.services.product_service import ProductService
 from apps.products.services.stock_service import StockService
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import ProductPathSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class AdminProductRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -27,7 +26,7 @@ class AdminProductRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPI
     
     @custom_extend_schema(
         resource_name="AdminProductRetrieve",
-        parameters=[ProductPathSerializer],
+        parameters=[],
         response_serializer=AdminProductSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -45,8 +44,7 @@ class AdminProductRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPI
     
     @custom_extend_schema(
         resource_name="AdminProductUpdate",
-        parameters=[ProductPathSerializer, AdminProductSerializer],
-        request_serializer=AdminProductSerializer,
+        parameters=[AdminProductSerializer],
         response_serializer=AdminProductSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -65,8 +63,7 @@ class AdminProductRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPI
     
     @custom_extend_schema(
         resource_name="AdminProductPartialUpdate",
-        parameters=[ProductPathSerializer, AdminProductSerializer],
-        request_serializer=AdminProductSerializer,
+        parameters=[AdminProductSerializer],
         response_serializer=AdminProductSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -90,7 +87,7 @@ class AdminProductRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPI
     
     @custom_extend_schema(
         resource_name="AdminProductDelete",
-        parameters=[ProductPathSerializer],
+        parameters=[],
         status_codes=[
             ResponseStatusCodes.NO_CONTENT,
             ResponseStatusCodes.NOT_FOUND,
@@ -118,8 +115,7 @@ class AdminProductUpdateStockAPIView(generics.GenericAPIView):
     
     @custom_extend_schema(
         resource_name="AdminProductUpdateStock",
-        parameters=[ProductPathSerializer, UpdateStockSerializer],
-        request_serializer=UpdateStockSerializer,
+        parameters=[UpdateStockSerializer],
         response_serializer=AdminProductSerializer,
         status_codes=[
             ResponseStatusCodes.OK,

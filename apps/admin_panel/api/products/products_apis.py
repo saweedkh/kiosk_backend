@@ -9,8 +9,7 @@ from apps.admin_panel.api.products.products_filters import AdminProductFilter
 from apps.admin_panel.api.permissions import IsAdminUser
 from apps.products.services.product_service import ProductService
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import AdminProductQuerySerializer, PaginationQuerySerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class AdminProductListAPIView(generics.ListCreateAPIView):
@@ -37,7 +36,7 @@ class AdminProductListAPIView(generics.ListCreateAPIView):
     
     @custom_extend_schema(
         resource_name="AdminProductList",
-        parameters=[AdminProductQuerySerializer, PaginationQuerySerializer],
+        parameters=[],
         response_serializer=AdminProductListSerializer,
         status_codes=[
             ResponseStatusCodes.OK_PAGINATED,
@@ -56,7 +55,6 @@ class AdminProductListAPIView(generics.ListCreateAPIView):
     @custom_extend_schema(
         resource_name="AdminProductCreate",
         parameters=[AdminProductSerializer],
-        request_serializer=AdminProductSerializer,
         response_serializer=AdminProductSerializer,
         status_codes=[
             ResponseStatusCodes.CREATED,

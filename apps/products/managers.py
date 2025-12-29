@@ -9,12 +9,6 @@ class ProductManager(models.Manager):
     def in_stock(self):
         return self.filter(stock_quantity__gt=0)
     
-    def low_stock(self):
-        return self.filter(
-            stock_quantity__lte=F('min_stock_level'),
-            is_active=True
-        )
-    
     def out_of_stock(self):
         return self.filter(stock_quantity=0)
     

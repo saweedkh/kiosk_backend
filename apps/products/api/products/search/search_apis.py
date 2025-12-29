@@ -1,10 +1,12 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.response import Response
-from apps.products.api.products.search.search_serializers import ProductSearchSerializer
+from apps.products.api.products.search.search_serializers import (
+    ProductSearchQuerySerializer,
+    ProductSearchSerializer
+)
 from apps.products.selectors.product_selector import ProductSelector
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import ProductSearchQuerySerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class ProductSearchAPIView(generics.GenericAPIView):
@@ -41,8 +43,15 @@ class ProductSearchAPIView(generics.GenericAPIView):
         Returns:
             Response: List of products matching the search query
         """
-        query = request.query_params.get('q', '')
+        params_serializer = ProductSearchQuerySerializer(data=request.query_params)
+        params_serializer.is_valid(raise_exception=True)
+        params = params_serializer.validated_data
+        
+        query = params.get('q', '')
         products = ProductSelector.search_products(query)
-        serializer = self.get_serializer(products, many=True)
-        return Response(serializer.data)
+        
+        return Response(
+            data=ProductSearchSerializer(products, many=True).data,
+            status=status.HTTP_200_OK
+        )
 

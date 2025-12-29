@@ -7,9 +7,7 @@ from apps.admin_panel.api.categories.categories_serializers import (
 from apps.admin_panel.api.categories.categories_filters import AdminCategoryFilter
 from apps.admin_panel.api.permissions import IsAdminUser
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import AdminCategoryQuerySerializer, PaginationQuerySerializer
-from apps.core.api.status_codes import ResponseStatusCodes
-from apps.core.api.status_code_mapper import get_admin_status_codes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class AdminCategoryListAPIView(generics.ListCreateAPIView):
@@ -36,7 +34,6 @@ class AdminCategoryListAPIView(generics.ListCreateAPIView):
     
     @custom_extend_schema(
         resource_name="AdminCategoryList",
-        parameters=[AdminCategoryQuerySerializer, PaginationQuerySerializer],
         response_serializer=AdminCategoryListSerializer,
         status_codes=[
             ResponseStatusCodes.OK_PAGINATED,
@@ -55,7 +52,6 @@ class AdminCategoryListAPIView(generics.ListCreateAPIView):
     @custom_extend_schema(
         resource_name="AdminCategoryCreate",
         parameters=[AdminCategorySerializer],
-        request_serializer=AdminCategorySerializer,
         response_serializer=AdminCategorySerializer,
         status_codes=[
             ResponseStatusCodes.CREATED,

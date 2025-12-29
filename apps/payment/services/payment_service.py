@@ -126,8 +126,16 @@ class PaymentService:
         try:
             verification_result = gateway.verify_payment(transaction_id)
             
+            # Map gateway status to transaction status
+            gateway_status = verification_result.get('status', 'failed')
+            if gateway_status == 'success':
+                transaction_obj.status = 'success'
+            elif gateway_status == 'failed':
+                transaction_obj.status = 'failed'
+            else:
+                transaction_obj.status = 'pending'
+            
             transaction_obj.gateway_response_data = verification_result
-            transaction_obj.status = verification_result.get('status', transaction_obj.status)
             transaction_obj.save()
             
             LogService.log_info(

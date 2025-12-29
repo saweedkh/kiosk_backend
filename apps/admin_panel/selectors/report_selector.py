@@ -72,15 +72,10 @@ class ReportSelector:
     
     @staticmethod
     def get_stock_report():
-        low_stock = Product.objects.filter(
-            stock_quantity__lte=F('min_stock_level')
-        ).values('id', 'name', 'stock_quantity', 'min_stock_level')
-        
         out_of_stock = Product.objects.filter(stock_quantity=0).count()
         total_products = Product.objects.count()
         
         return {
-            'low_stock_products': list(low_stock),
             'out_of_stock_count': out_of_stock,
             'total_products': total_products
         }

@@ -55,11 +55,6 @@ class Product(TimeStampedModel):
         validators=[MinValueValidator(0)],
         verbose_name=_('موجودی')
     )
-    min_stock_level = models.IntegerField(
-        default=0,
-        validators=[MinValueValidator(0)],
-        verbose_name=_('حداقل موجودی')
-    )
     is_active = models.BooleanField(default=True, verbose_name=_('فعال'))
     
     objects = ProductManager()
@@ -80,10 +75,6 @@ class Product(TimeStampedModel):
     @property
     def is_in_stock(self):
         return self.stock_quantity > 0
-    
-    @property
-    def is_low_stock(self):
-        return self.stock_quantity <= self.min_stock_level
 
 
 class StockHistory(TimeStampedModel):

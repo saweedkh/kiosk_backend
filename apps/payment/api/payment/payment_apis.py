@@ -10,7 +10,7 @@ from apps.payment.services.payment_service import PaymentService
 from apps.orders.selectors.order_selector import OrderSelector
 from apps.orders.services.invoice_service import InvoiceService
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class PaymentInitiateAPIView(generics.GenericAPIView):
@@ -24,14 +24,12 @@ class PaymentInitiateAPIView(generics.GenericAPIView):
     @custom_extend_schema(
         resource_name="PaymentInitiate",
         parameters=[PaymentInitiateSerializer],
-        request_serializer=PaymentInitiateSerializer,
         response_serializer=PaymentResponseSerializer,
         status_codes=[
             ResponseStatusCodes.CREATED,
             ResponseStatusCodes.BAD_REQUEST,
             ResponseStatusCodes.NOT_FOUND,
             ResponseStatusCodes.SERVER_ERROR,
-            ResponseStatusCodes.SERVICE_UNAVAILABLE,
         ],
         summary="Initiate Payment",
         description="Initiate a payment transaction with the payment gateway for an order. Returns transaction details including transaction ID.",
@@ -92,14 +90,12 @@ class PaymentVerifyAPIView(generics.GenericAPIView):
     @custom_extend_schema(
         resource_name="PaymentVerify",
         parameters=[PaymentVerifySerializer],
-        request_serializer=PaymentVerifySerializer,
         response_serializer=PaymentResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.BAD_REQUEST,
             ResponseStatusCodes.NOT_FOUND,
             ResponseStatusCodes.SERVER_ERROR,
-            ResponseStatusCodes.SERVICE_UNAVAILABLE,
         ],
         summary="Verify Payment",
         description="Verify a payment transaction with the payment gateway. Updates order status based on verification result.",
@@ -131,11 +127,12 @@ class PaymentVerifyAPIView(generics.GenericAPIView):
             order = OrderSelector.get_order_by_id(transaction.order_id)
             if order:
                 if transaction.status == 'success':
-                    order.payment_status = 'paid'
-                    order.status = 'paid'
+                    # Update order payment status and decrease stock
+                    from apps.orders.services.order_service import OrderService
+                    OrderService.update_payment_status(order.id, 'paid')
                 elif transaction.status == 'failed':
                     order.payment_status = 'failed'
-                order.save()
+                    order.save()
         
         return Response(PaymentResponseSerializer(transaction).data)
 
@@ -151,14 +148,12 @@ class PaymentStatusAPIView(generics.GenericAPIView):
     @custom_extend_schema(
         resource_name="PaymentStatus",
         parameters=[PaymentStatusSerializer],
-        request_serializer=PaymentStatusSerializer,
         response_serializer=PaymentResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.BAD_REQUEST,
             ResponseStatusCodes.NOT_FOUND,
             ResponseStatusCodes.SERVER_ERROR,
-            ResponseStatusCodes.SERVICE_UNAVAILABLE,
         ],
         summary="Get Payment Status",
         description="Get the current payment status from the payment gateway for a transaction.",

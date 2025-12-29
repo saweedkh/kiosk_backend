@@ -1,11 +1,18 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.response import Response
-from apps.admin_panel.api.reports.reports_serializers import DateRangeSerializer, DailyReportSerializer
+from apps.admin_panel.api.reports.reports_serializers import (
+    DateRangeSerializer,
+    DailyReportSerializer,
+    SalesReportResponseSerializer,
+    TransactionReportResponseSerializer,
+    ProductReportResponseSerializer,
+    StockReportResponseSerializer,
+    DailyReportResponseSerializer
+)
 from apps.admin_panel.api.permissions import IsAdminUser
 from apps.admin_panel.services.report_service import ReportService
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import DateRangeQuerySerializer, DailyReportQuerySerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class SalesReportAPIView(generics.GenericAPIView):
@@ -23,7 +30,7 @@ class SalesReportAPIView(generics.GenericAPIView):
     
     @custom_extend_schema(
         resource_name="SalesReport",
-        parameters=[DateRangeQuerySerializer],
+        response_serializer=SalesReportResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.UNAUTHORIZED,
@@ -32,6 +39,7 @@ class SalesReportAPIView(generics.GenericAPIView):
         summary="Sales Report",
         description="Generate sales report with statistics including total sales, total orders, and average order value.",
         tags=["Admin - Reports"],
+        operation_id="admin_reports_sales",
     )
     def get(self, request):
         """
@@ -43,16 +51,20 @@ class SalesReportAPIView(generics.GenericAPIView):
         Returns:
             Response: Sales report data
         """
-        serializer = self.get_serializer(data=request.query_params)
-        serializer.is_valid(raise_exception=True)
+        params_serializer = DateRangeSerializer(data=request.query_params)
+        params_serializer.is_valid(raise_exception=True)
+        params = params_serializer.validated_data
         
         report = ReportService.get_sales_report(
-            start_date=serializer.validated_data.get('start_date'),
-            end_date=serializer.validated_data.get('end_date'),
+            start_date=params.get('start_date'),
+            end_date=params.get('end_date'),
             user=request.user
         )
         
-        return Response(report)
+        return Response(
+            data=SalesReportResponseSerializer(report).data,
+            status=status.HTTP_200_OK
+        )
 
 
 class TransactionReportAPIView(generics.GenericAPIView):
@@ -70,7 +82,7 @@ class TransactionReportAPIView(generics.GenericAPIView):
     
     @custom_extend_schema(
         resource_name="TransactionReport",
-        parameters=[DateRangeQuerySerializer],
+        response_serializer=TransactionReportResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.UNAUTHORIZED,
@@ -91,16 +103,20 @@ class TransactionReportAPIView(generics.GenericAPIView):
         Returns:
             Response: Transaction report data
         """
-        serializer = self.get_serializer(data=request.query_params)
-        serializer.is_valid(raise_exception=True)
+        params_serializer = DateRangeSerializer(data=request.query_params)
+        params_serializer.is_valid(raise_exception=True)
+        params = params_serializer.validated_data
         
         report = ReportService.get_transaction_report(
-            start_date=serializer.validated_data.get('start_date'),
-            end_date=serializer.validated_data.get('end_date'),
+            start_date=params.get('start_date'),
+            end_date=params.get('end_date'),
             user=request.user
         )
         
-        return Response(report)
+        return Response(
+            data=TransactionReportResponseSerializer(report).data,
+            status=status.HTTP_200_OK
+        )
 
 
 class ProductReportAPIView(generics.GenericAPIView):
@@ -113,6 +129,7 @@ class ProductReportAPIView(generics.GenericAPIView):
     
     @custom_extend_schema(
         resource_name="ProductReport",
+        response_serializer=ProductReportResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.UNAUTHORIZED,
@@ -134,7 +151,11 @@ class ProductReportAPIView(generics.GenericAPIView):
             Response: Product report data
         """
         report = ReportService.get_product_report(user=request.user)
-        return Response(report)
+        
+        return Response(
+            data=ProductReportResponseSerializer(report).data,
+            status=status.HTTP_200_OK
+        )
 
 
 class StockReportAPIView(generics.GenericAPIView):
@@ -147,6 +168,7 @@ class StockReportAPIView(generics.GenericAPIView):
     
     @custom_extend_schema(
         resource_name="StockReport",
+        response_serializer=StockReportResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.UNAUTHORIZED,
@@ -168,7 +190,11 @@ class StockReportAPIView(generics.GenericAPIView):
             Response: Stock report data
         """
         report = ReportService.get_stock_report(user=request.user)
-        return Response(report)
+        
+        return Response(
+            data=StockReportResponseSerializer(report).data,
+            status=status.HTTP_200_OK
+        )
 
 
 class DailyReportAPIView(generics.GenericAPIView):
@@ -185,7 +211,7 @@ class DailyReportAPIView(generics.GenericAPIView):
     
     @custom_extend_schema(
         resource_name="DailyReport",
-        parameters=[DailyReportQuerySerializer],
+        response_serializer=DailyReportResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.UNAUTHORIZED,
@@ -206,13 +232,17 @@ class DailyReportAPIView(generics.GenericAPIView):
         Returns:
             Response: Daily report data
         """
-        serializer = self.get_serializer(data=request.query_params)
-        serializer.is_valid(raise_exception=True)
+        params_serializer = DailyReportSerializer(data=request.query_params)
+        params_serializer.is_valid(raise_exception=True)
+        params = params_serializer.validated_data
         
         report = ReportService.get_daily_report(
-            date=serializer.validated_data.get('date'),
+            date=params.get('date'),
             user=request.user
         )
         
-        return Response(report)
+        return Response(
+            data=DailyReportResponseSerializer(report).data,
+            status=status.HTTP_200_OK
+        )
 

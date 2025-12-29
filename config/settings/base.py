@@ -21,12 +21,13 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     
     'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_filters',
     'drf_spectacular',
     
     'apps.products',
-    'apps.cart',
     'apps.orders',
     'apps.payment',
     'apps.logs',
@@ -114,10 +115,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'apps.core.api.renderers.CustomJSONRenderer',
     ],
     'DEFAULT_PAGINATION_CLASS': 'apps.core.api.pagination.StandardResultsSetPagination',
     'PAGE_SIZE': 20,
@@ -187,6 +191,16 @@ PAYMENT_GATEWAY_CONFIG = {
     'merchant_id': os.getenv('PAYMENT_GATEWAY_MERCHANT_ID', ''),
     'terminal_id': os.getenv('PAYMENT_GATEWAY_TERMINAL_ID', ''),
     'callback_url': os.getenv('PAYMENT_GATEWAY_CALLBACK_URL', ''),
+    # POS Card Reader Configuration
+    'connection_type': os.getenv('POS_CONNECTION_TYPE', 'tcp'),  # 'serial' or 'tcp'
+    'serial_port': os.getenv('POS_SERIAL_PORT', 'COM1'),  # e.g., 'COM1', '/dev/ttyUSB0'
+    'serial_baudrate': int(os.getenv('POS_SERIAL_BAUDRATE', '9600')),
+    'tcp_host': os.getenv('POS_TCP_HOST', '192.168.1.100'),
+    'tcp_port': int(os.getenv('POS_TCP_PORT', '1362')),
+    'timeout': int(os.getenv('POS_TIMEOUT', '30')),
+    # DLL Configuration (if using DLL)
+    'pos_use_dll': os.getenv('POS_USE_DLL', 'False') == 'True',
+    'dll_path': os.getenv('POS_DLL_PATH', ''),  # Path to DLL file (e.g., 'C:/path/to/pna.pcpos.dll')
 }
 
 SPECTACULAR_SETTINGS = {
@@ -198,7 +212,6 @@ SPECTACULAR_SETTINGS = {
     'TAGS': [
         {'name': 'Products', 'description': 'Product listing and details endpoints'},
         {'name': 'Categories', 'description': 'Category listing endpoints'},
-        {'name': 'Cart', 'description': 'Shopping cart management endpoints'},
         {'name': 'Orders', 'description': 'Order management endpoints'},
         {'name': 'Invoices', 'description': 'Invoice generation and download endpoints'},
         {'name': 'Payment', 'description': 'Payment processing endpoints'},
@@ -216,7 +229,6 @@ SPECTACULAR_SETTINGS = {
     'TAG_ORDER': [
         'Products',
         'Categories',
-        'Cart',
         'Orders',
         'Invoices',
         'Payment',
@@ -227,16 +239,35 @@ SPECTACULAR_SETTINGS = {
         'Admin - Orders',
         'Admin - Reports',
     ],
-    'APPEND_COMPONENTS': {
+    'PREPEND_COMPONENTS': {
         'securitySchemes': {
-            'SessionAuthentication': {
-                'type': 'apiKey',
-                'in': 'cookie',
-                'name': 'sessionid',
-                'description': 'Session-based authentication. Login via /api/kiosk/admin-panel/auth/login/'
+            'jwtAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+                'description': 'JWT token authentication. Get token from /api/kiosk/admin/auth/login/'
             }
         }
     },
-    'SECURITY': [{'SessionAuthentication': []}],
+    'SECURITY': [{'jwtAuth': []}],
+}
+
+# JWT Settings
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
 }
 

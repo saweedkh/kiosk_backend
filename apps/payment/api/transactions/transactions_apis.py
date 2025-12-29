@@ -1,14 +1,15 @@
-from rest_framework import generics
+from rest_framework import generics, status
+from rest_framework.response import Response
 from apps.payment.models import Transaction
 from apps.payment.api.transactions.transactions_serializers import (
+    TransactionQuerySerializer,
     TransactionSerializer,
     TransactionListSerializer
 )
 from apps.payment.api.transactions.transactions_filters import TransactionFilter
 from apps.payment.selectors.transaction_selector import TransactionSelector
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import TransactionQuerySerializer, TransactionPathSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class TransactionListAPIView(generics.ListAPIView):
@@ -32,27 +33,44 @@ class TransactionListAPIView(generics.ListAPIView):
         operation_id="transactions_list",
     )
     def get(self, request, *args, **kwargs):
-        return super().get(request, *args, **kwargs)
-    
-    def get_queryset(self):
         """
-        Get queryset of transactions.
+        Get list of transactions.
         
-        Query Parameters:
-            order_id: Filter transactions by order ID (optional)
+        Args:
+            request: HTTP request object
             
         Returns:
-            QuerySet: QuerySet of transactions
+            Response: Paginated list of transactions
         """
-        session_key = self.request.session.session_key
+        params_serializer = TransactionQuerySerializer(data=request.query_params)
+        params_serializer.is_valid(raise_exception=True)
+        params = params_serializer.validated_data
+        
+        session_key = request.session.session_key
         if not session_key:
-            return Transaction.objects.none()
+            queryset = Transaction.objects.none()
+        else:
+            order_id = params.get('order_id')
+            if order_id:
+                queryset = TransactionSelector.get_transactions_by_order(order_id)
+            else:
+                queryset = Transaction.objects.all()
         
-        order_id = self.request.query_params.get('order_id')
-        if order_id:
-            return TransactionSelector.get_transactions_by_order(order_id)
+        # Apply filterset if provided
+        if self.filterset_class:
+            queryset = self.filterset_class(request.query_params, queryset=queryset).qs
         
-        return Transaction.objects.all()
+        # Paginate results
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(
+            data=serializer.data,
+            status=status.HTTP_200_OK
+        )
 
 
 class TransactionRetrieveAPIView(generics.RetrieveAPIView):
@@ -66,7 +84,7 @@ class TransactionRetrieveAPIView(generics.RetrieveAPIView):
     
     @custom_extend_schema(
         resource_name="TransactionRetrieve",
-        parameters=[TransactionPathSerializer],
+        parameters=[],
         response_serializer=TransactionSerializer,
         status_codes=[
             ResponseStatusCodes.OK,

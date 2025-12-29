@@ -2,12 +2,11 @@ from rest_framework import generics
 from rest_framework.response import Response
 from django.http import FileResponse
 from apps.orders.models import Invoice
-from apps.orders.api.invoices.invoices_serializers import InvoiceSerializer
+from apps.orders.api.invoices.invoices_serializers import InvoiceSerializer, InvoiceJSONResponseSerializer
 from apps.orders.selectors.invoice_selector import InvoiceSelector
 from apps.orders.services.invoice_service import InvoiceService
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import InvoicePathSerializer, OrderPathSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class InvoiceRetrieveAPIView(generics.RetrieveAPIView):
@@ -21,7 +20,7 @@ class InvoiceRetrieveAPIView(generics.RetrieveAPIView):
     
     @custom_extend_schema(
         resource_name="InvoiceRetrieve",
-        parameters=[InvoicePathSerializer],
+        parameters=[],
         response_serializer=InvoiceSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -53,7 +52,7 @@ class InvoiceDownloadPDFAPIView(generics.GenericAPIView):
     """
     @custom_extend_schema(
         resource_name="InvoiceDownloadPDF",
-        parameters=[InvoicePathSerializer],
+        parameters=[],
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.NOT_FOUND,
@@ -96,7 +95,8 @@ class InvoiceDownloadJSONAPIView(generics.GenericAPIView):
     """
     @custom_extend_schema(
         resource_name="InvoiceDownloadJSON",
-        parameters=[InvoicePathSerializer],
+        parameters=[],
+        response_serializer=InvoiceJSONResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.NOT_FOUND,
@@ -135,9 +135,11 @@ class InvoiceCreateAPIView(generics.GenericAPIView):
     
     Generates both PDF and JSON formats of the invoice.
     """
+    serializer_class = InvoiceSerializer
+    
     @custom_extend_schema(
         resource_name="InvoiceCreate",
-        parameters=[OrderPathSerializer],
+        parameters=[],
         response_serializer=InvoiceSerializer,
         status_codes=[
             ResponseStatusCodes.CREATED,

@@ -4,7 +4,6 @@ app_name = 'api'
 
 urlpatterns = [
     path('products/', include('apps.products.api.urls')),
-    path('cart/', include('apps.cart.api.urls')),
     path('orders/', include('apps.orders.api.urls')),
     path('payment/', include('apps.payment.api.urls')),
     path('admin/', include('apps.admin_panel.api.urls')),

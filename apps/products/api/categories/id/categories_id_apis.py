@@ -3,8 +3,7 @@ from apps.products.models import Category
 from apps.products.api.categories.id.categories_id_serializers import CategorySerializer
 from apps.products.selectors.category_selector import CategorySelector
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import CategoryPathSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class CategoryRetrieveAPIView(generics.RetrieveAPIView):
@@ -19,7 +18,7 @@ class CategoryRetrieveAPIView(generics.RetrieveAPIView):
     
     @custom_extend_schema(
         resource_name="CategoryRetrieve",
-        parameters=[CategoryPathSerializer],
+        parameters=[],
         response_serializer=CategorySerializer,
         status_codes=[
             ResponseStatusCodes.OK,

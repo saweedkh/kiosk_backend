@@ -52,16 +52,6 @@ class ProductSelector:
         ).select_related('category')
     
     @staticmethod
-    def get_low_stock_products() -> QuerySet[Product]:
-        """
-        Get products with low stock (stock_quantity <= low_stock_threshold).
-        
-        Returns:
-            QuerySet[Product]: QuerySet of products with low stock
-        """
-        return Product.objects.low_stock().select_related('category')
-    
-    @staticmethod
     def search_products(query: str) -> QuerySet[Product]:
         """
         Search products by name or description.

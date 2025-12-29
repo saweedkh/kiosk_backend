@@ -3,6 +3,11 @@ from django.utils.translation import gettext_lazy as _
 from apps.products.models import Product
 
 
+class ProductSearchQuerySerializer(serializers.Serializer):
+    """Serializer for product search query parameters."""
+    q = serializers.CharField(required=True, label=_('جستجو'), help_text=_('Search query string'))
+
+
 class ProductSearchSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(
         source='category.name',

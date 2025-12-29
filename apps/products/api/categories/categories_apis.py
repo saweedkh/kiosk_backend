@@ -3,7 +3,7 @@ from apps.products.models import Category
 from apps.products.api.categories.categories_serializers import CategoryListSerializer
 from apps.products.selectors.category_selector import CategorySelector
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class CategoryListAPIView(generics.ListAPIView):

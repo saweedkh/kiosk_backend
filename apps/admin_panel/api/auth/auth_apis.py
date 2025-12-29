@@ -1,12 +1,21 @@
+from typing import Any
 from rest_framework import generics, status
 from rest_framework.response import Response
 from django.contrib.auth import login, logout
 from django.contrib.auth import get_user_model
-from apps.admin_panel.api.auth.auth_serializers import LoginSerializer, UserSerializer
+from apps.admin_panel.api.auth.auth_serializers import (
+    LoginSerializer,
+    UserSerializer,
+    LoginResponseSerializer,
+    LogoutResponseSerializer,
+    UserInfoResponseSerializer
+)
+from apps.admin_panel.api.permissions import IsAdminUser
 from apps.logs.services.log_service import LogService
+from apps.admin_panel.services.auth_service import AuthService
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import LoginRequestSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
+from django.utils.translation import gettext_lazy as _
 
 User = get_user_model()
 
@@ -21,9 +30,8 @@ class LoginAPIView(generics.GenericAPIView):
     
     @custom_extend_schema(
         resource_name="AdminLogin",
-        parameters=[LoginRequestSerializer],
-        request_serializer=LoginSerializer,
-        response_serializer=UserSerializer,
+        parameters=[LoginSerializer],
+        response_serializer=LoginResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.BAD_REQUEST,
@@ -42,16 +50,19 @@ class LoginAPIView(generics.GenericAPIView):
             request: HTTP request object with username and password
             
         Returns:
-            Response: Success message and user data
+            Response: Standard response with user data in result field
             
         Raises:
             ValidationError: If credentials are invalid
         """
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        request_serializer = LoginSerializer(data=request.data)
+        request_serializer.is_valid(raise_exception=True)
+        request_data = request_serializer.validated_data
         
-        user = serializer.validated_data['user']
-        login(request, user)
+        user = request_data['user']
+        
+        # Generate JWT tokens
+        tokens = AuthService.generate_tokens(user)
         
         LogService.log_info(
             'admin',
@@ -60,11 +71,17 @@ class LoginAPIView(generics.GenericAPIView):
             ip_address=request.META.get('REMOTE_ADDR'),
             details={'username': user.username}
         )
+
+        response_data = {
+            'access_token': tokens['access_token'],
+            'refresh_token': tokens['refresh_token'],
+            'user_info': UserSerializer(user).data
+        }
         
-        return Response({
-            'message': 'Login successful',
-            'user': UserSerializer(user).data
-        })
+        return Response(
+            data=LoginResponseSerializer(response_data).data,
+            status=status.HTTP_200_OK
+        )
 
 
 class LogoutAPIView(generics.GenericAPIView):
@@ -73,8 +90,12 @@ class LogoutAPIView(generics.GenericAPIView):
     
     Logs out the current admin user and destroys the session.
     """
+    serializer_class = LogoutResponseSerializer
+    permission_classes = [IsAdminUser]
+    
     @custom_extend_schema(
         resource_name="AdminLogout",
+        response_serializer=LogoutResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.UNAUTHORIZED,
@@ -92,7 +113,7 @@ class LogoutAPIView(generics.GenericAPIView):
             request: HTTP request object
             
         Returns:
-            Response: Success message
+            Response: Standard response with success message
         """
         if request.user.is_authenticated:
             username = request.user.username
@@ -106,7 +127,12 @@ class LogoutAPIView(generics.GenericAPIView):
                 details={'username': username}
             )
         
-        return Response({'message': 'Logout successful'})
+        response_data = {'message': 'Logout successful'}
+        
+        return Response(
+            data=LogoutResponseSerializer(response_data).data,
+            status=status.HTTP_200_OK
+        )
 
 
 class UserInfoAPIView(generics.GenericAPIView):
@@ -116,10 +142,11 @@ class UserInfoAPIView(generics.GenericAPIView):
     Returns information about the currently authenticated admin user.
     """
     serializer_class = UserSerializer
+    permission_classes = [IsAdminUser]
     
     @custom_extend_schema(
         resource_name="AdminUserInfo",
-        response_serializer=UserSerializer,
+        response_serializer=UserInfoResponseSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
             ResponseStatusCodes.UNAUTHORIZED,
@@ -137,16 +164,14 @@ class UserInfoAPIView(generics.GenericAPIView):
             request: HTTP request object
             
         Returns:
-            Response: User data
-            
-        Raises:
-            401: If user is not authenticated or not staff
+            Response: Standard response with user data in result field
         """
-        if not request.user.is_authenticated or not request.user.is_staff:
-            return Response(
-                {'error': 'Authentication required'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+        response_data = {
+            'user': UserSerializer(request.user).data
+        }
         
-        return Response(UserSerializer(request.user).data)
+        return Response(
+            data=UserInfoResponseSerializer(response_data).data,
+            status=status.HTTP_200_OK,
+        )
 

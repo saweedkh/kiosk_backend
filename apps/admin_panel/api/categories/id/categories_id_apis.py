@@ -3,8 +3,7 @@ from apps.products.models import Category
 from apps.admin_panel.api.categories.categories_serializers import AdminCategorySerializer
 from apps.admin_panel.api.permissions import IsAdminUser
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import CategoryPathSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class AdminCategoryRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -21,7 +20,7 @@ class AdminCategoryRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAP
     
     @custom_extend_schema(
         resource_name="AdminCategoryRetrieve",
-        parameters=[CategoryPathSerializer],
+        parameters=[],
         response_serializer=AdminCategorySerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -39,8 +38,7 @@ class AdminCategoryRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAP
     
     @custom_extend_schema(
         resource_name="AdminCategoryUpdate",
-        parameters=[CategoryPathSerializer, AdminCategorySerializer],
-        request_serializer=AdminCategorySerializer,
+        parameters=[AdminCategorySerializer],
         response_serializer=AdminCategorySerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -59,8 +57,7 @@ class AdminCategoryRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAP
     
     @custom_extend_schema(
         resource_name="AdminCategoryPartialUpdate",
-        parameters=[CategoryPathSerializer, AdminCategorySerializer],
-        request_serializer=AdminCategorySerializer,
+        parameters=[AdminCategorySerializer],
         response_serializer=AdminCategorySerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -79,7 +76,7 @@ class AdminCategoryRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAP
     
     @custom_extend_schema(
         resource_name="AdminCategoryDelete",
-        parameters=[CategoryPathSerializer],
+        parameters=[],
         status_codes=[
             ResponseStatusCodes.NO_CONTENT,
             ResponseStatusCodes.NOT_FOUND,

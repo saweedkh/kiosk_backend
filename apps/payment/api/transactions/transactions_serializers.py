@@ -3,6 +3,11 @@ from django.utils.translation import gettext_lazy as _
 from apps.payment.models import Transaction
 
 
+class TransactionQuerySerializer(serializers.Serializer):
+    """Serializer for transaction list query parameters."""
+    order_id = serializers.IntegerField(required=False, label=_('شناسه سفارش'), help_text=_('Filter transactions by order ID'))
+
+
 class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction

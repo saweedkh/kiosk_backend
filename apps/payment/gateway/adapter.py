@@ -2,6 +2,8 @@ from django.conf import settings
 from typing import Dict, Any
 from .base import BasePaymentGateway
 from .mock import MockPaymentGateway
+from .pos import POSPaymentGateway
+from .pos_dll_net import POSNETPaymentGateway
 from .exceptions import GatewayException
 
 
@@ -11,9 +13,16 @@ class PaymentGatewayAdapter:
     def get_gateway() -> BasePaymentGateway:
         config = settings.PAYMENT_GATEWAY_CONFIG
         gateway_name = config.get('gateway_name', 'mock')
+        use_dll = config.get('pos_use_dll', False)
         
         if gateway_name == 'mock':
             return MockPaymentGateway(config)
+        elif gateway_name == 'pos':
+            # Use .NET DLL if available and configured, otherwise use direct protocol
+            if use_dll:
+                return POSNETPaymentGateway(config)
+            else:
+                return POSPaymentGateway(config)
         
         raise GatewayException(f'Unknown gateway: {gateway_name}')
     

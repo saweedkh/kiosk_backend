@@ -15,7 +15,7 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = ['name', 'category', 'price', 'stock_quantity', 'is_active', 'created_at']
     list_filter = ['category', 'is_active', 'created_at']
     search_fields = ['name', 'description']
-    readonly_fields = ['is_in_stock', 'is_low_stock', 'created_at', 'updated_at']
+    readonly_fields = ['is_in_stock', 'created_at', 'updated_at']
     fieldsets = (
         ('Basic Information', {
             'fields': ('name', 'description', 'category', 'image')
@@ -24,7 +24,7 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('price',)
         }),
         ('Stock', {
-            'fields': ('stock_quantity', 'min_stock_level', 'is_in_stock', 'is_low_stock')
+            'fields': ('stock_quantity', 'is_in_stock')
         }),
         ('Status', {
             'fields': ('is_active',)

@@ -3,8 +3,7 @@ from apps.products.models import Product
 from apps.products.api.products.id.products_id_serializers import ProductDetailSerializer
 from apps.products.selectors.product_selector import ProductSelector
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import ProductPathSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class ProductRetrieveAPIView(generics.RetrieveAPIView):
@@ -20,7 +19,6 @@ class ProductRetrieveAPIView(generics.RetrieveAPIView):
     
     @custom_extend_schema(
         resource_name="ProductRetrieve",
-        parameters=[ProductPathSerializer],
         response_serializer=ProductDetailSerializer,
         status_codes=[
             ResponseStatusCodes.OK,

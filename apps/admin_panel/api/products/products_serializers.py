@@ -10,10 +10,10 @@ class AdminProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'description', 'price', 'category', 'category_name',
-            'image', 'stock_quantity', 'min_stock_level', 'is_active',
-            'is_in_stock', 'is_low_stock', 'created_at', 'updated_at'
+            'image', 'stock_quantity', 'is_active',
+            'is_in_stock', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'is_in_stock', 'is_low_stock', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'is_in_stock', 'created_at', 'updated_at']
 
 
 class AdminProductListSerializer(serializers.ModelSerializer):
@@ -23,9 +23,9 @@ class AdminProductListSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'price', 'category_name', 'stock_quantity',
-            'is_active', 'is_in_stock', 'is_low_stock'
+            'is_active', 'is_in_stock'
         ]
-        read_only_fields = ['id', 'is_in_stock', 'is_low_stock']
+        read_only_fields = ['id', 'is_in_stock']
 
 
 class UpdateStockSerializer(serializers.Serializer):

@@ -8,8 +8,7 @@ from apps.admin_panel.api.orders.orders_serializers import (
 from apps.admin_panel.api.permissions import IsAdminUser
 from apps.orders.services.order_service import OrderService
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import OrderPathSerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class AdminOrderRetrieveAPIView(generics.RetrieveAPIView):
@@ -24,7 +23,7 @@ class AdminOrderRetrieveAPIView(generics.RetrieveAPIView):
     
     @custom_extend_schema(
         resource_name="AdminOrderRetrieve",
-        parameters=[OrderPathSerializer],
+        parameters=[],
         response_serializer=AdminOrderSerializer,
         status_codes=[
             ResponseStatusCodes.OK,
@@ -53,8 +52,7 @@ class AdminOrderUpdateStatusAPIView(generics.GenericAPIView):
     
     @custom_extend_schema(
         resource_name="AdminOrderUpdateStatus",
-        parameters=[OrderPathSerializer, UpdateOrderStatusSerializer],
-        request_serializer=UpdateOrderStatusSerializer,
+        parameters=[UpdateOrderStatusSerializer],
         response_serializer=AdminOrderSerializer,
         status_codes=[
             ResponseStatusCodes.OK,

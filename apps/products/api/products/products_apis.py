@@ -4,8 +4,7 @@ from apps.products.api.products.products_serializers import ProductListSerialize
 from apps.products.api.products.products_filters import ProductFilter
 from apps.products.selectors.product_selector import ProductSelector
 from apps.core.api.schema import custom_extend_schema
-from apps.core.api.parameter_serializers import ProductQuerySerializer, PaginationQuerySerializer
-from apps.core.api.status_codes import ResponseStatusCodes
+from apps.core.api.schema import ResponseStatusCodes
 
 
 class ProductListAPIView(generics.ListAPIView):
@@ -21,7 +20,7 @@ class ProductListAPIView(generics.ListAPIView):
     
     @custom_extend_schema(
         resource_name="ProductList",
-        parameters=[ProductQuerySerializer, PaginationQuerySerializer],
+        parameters=[],
         response_serializer=ProductListSerializer,
         status_codes=[
             ResponseStatusCodes.OK_PAGINATED,

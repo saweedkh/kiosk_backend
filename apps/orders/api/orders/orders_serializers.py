@@ -33,16 +33,19 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
 
 
-class OrderListSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Order
-        fields = [
-            'id', 'order_number', 'status', 'payment_status',
-            'total_amount', 'created_at'
-        ]
-        read_only_fields = ['id', 'order_number', 'status', 'payment_status', 'total_amount', 'created_at']
+class OrderItemCreateSerializer(serializers.Serializer):
+    """Serializer for order item creation."""
+    product_id = serializers.IntegerField(label=_('شناسه محصول'))
+    quantity = serializers.IntegerField(min_value=1, label=_('تعداد'))
 
 
 class OrderCreateSerializer(serializers.Serializer):
-    pass
+    """Serializer for order creation from frontend."""
+    items = OrderItemCreateSerializer(many=True, label=_('آیتم‌های سفارش'))
+    
+    def validate_items(self, value):
+        """Validate that items list is not empty."""
+        if not value:
+            raise serializers.ValidationError(_('لیست آیتم‌های سفارش نمی‌تواند خالی باشد.'))
+        return value
 

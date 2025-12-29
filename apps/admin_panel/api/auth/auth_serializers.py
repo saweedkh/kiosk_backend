@@ -1,3 +1,6 @@
+from typing import Any
+
+
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.utils.translation import gettext_lazy as _
@@ -32,10 +35,24 @@ class LoginSerializer(serializers.Serializer):
         
         return attrs
 
-
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_staff', 'is_active']
         read_only_fields = ['id', 'username', 'email', 'is_staff', 'is_active']
+    
+class LoginResponseSerializer(serializers.Serializer):
+    access_token = serializers.CharField(help_text=_('توکن دسترسی'))
+    refresh_token = serializers.CharField(help_text=_('توکن رفرش'))
+    user_info = UserSerializer(help_text=_('اطلاعات کاربری'))
+
+
+class LogoutResponseSerializer(serializers.Serializer):
+    """Serializer for logout response."""
+    message = serializers.CharField(help_text=_('پیام خروج با موفقیت'))
+
+
+class UserInfoResponseSerializer(serializers.Serializer):
+    """Serializer for user info response."""
+    user = UserSerializer(help_text=_('اطلاعات کاربری'))
 

@@ -10,9 +10,8 @@ class AdminProductFilter(filters.FilterSet):
     price_max = filters.NumberFilter(field_name='price', lookup_expr='lte', label=_('حداکثر قیمت'))
     is_active = filters.BooleanFilter(label=_('فعال'))
     is_in_stock = filters.BooleanFilter(label=_('موجود در انبار'))
-    is_low_stock = filters.BooleanFilter(label=_('موجودی کم'))
     
     class Meta:
         model = Product
-        fields = ['name', 'category', 'price_min', 'price_max', 'is_active', 'is_in_stock', 'is_low_stock']
+        fields = ['name', 'category', 'price_min', 'price_max', 'is_active', 'is_in_stock']
 

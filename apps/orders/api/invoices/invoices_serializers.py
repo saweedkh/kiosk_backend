@@ -14,3 +14,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'invoice_number', 'pdf_file', 'json_data', 'created_at']
 
+
+class InvoiceJSONResponseSerializer(serializers.Serializer):
+    """Serializer for invoice JSON download response."""
+    # This will be a dynamic JSON structure, so we use JSONField
+    data = serializers.JSONField(help_text=_('Invoice JSON data'))
+

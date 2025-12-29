@@ -100,7 +100,6 @@ class ReportService:
                 - products: List of products with statistics
                 - total_products: Total number of products
                 - active_products: Number of active products
-                - low_stock_products: Number of products with low stock
         """
         report = {
             'products': list(ReportSelector.get_product_report())
@@ -125,10 +124,7 @@ class ReportService:
         Returns:
             Dict[str, Any]: Stock report data including:
                 - total_products: Total number of products
-                - in_stock: Number of products in stock
-                - out_of_stock: Number of products out of stock
-                - low_stock: Number of products with low stock
-                - stock_value: Total stock value
+                - out_of_stock_count: Number of products out of stock
         """
         report = ReportSelector.get_stock_report()
         
