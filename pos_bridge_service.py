@@ -23,6 +23,7 @@ import os
 import sys
 import time
 import json
+import socket
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -50,6 +51,16 @@ DEVICE_SERIAL = os.getenv('POS_DEVICE_SERIAL', '')
 
 # Global POS instance
 pos_instance = None
+
+
+def check_port_available(port, host='0.0.0.0'):
+    """Check if port is available."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, port))
+            return True
+    except OSError:
+        return False
 
 
 def init_pos_dll():
