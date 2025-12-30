@@ -190,6 +190,7 @@ PAYMENT_GATEWAY_CONFIG = {
     'api_secret': os.getenv('PAYMENT_GATEWAY_API_SECRET', ''),
     'merchant_id': os.getenv('PAYMENT_GATEWAY_MERCHANT_ID', ''),
     'terminal_id': os.getenv('PAYMENT_GATEWAY_TERMINAL_ID', ''),
+    'device_serial_number': os.getenv('POS_DEVICE_SERIAL_NUMBER', ''),  # Serial number of POS device
     'callback_url': os.getenv('PAYMENT_GATEWAY_CALLBACK_URL', ''),
     # POS Card Reader Configuration
     'connection_type': os.getenv('POS_CONNECTION_TYPE', 'tcp'),  # 'serial' or 'tcp'

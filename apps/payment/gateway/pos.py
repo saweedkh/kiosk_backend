@@ -5,13 +5,18 @@ This module implements the communication protocol with POS card readers
 as described in the technical documentation.
 """
 import socket
-import serial
 import time
 from typing import Dict, Any, Optional
 from django.conf import settings
 from django.utils import timezone
 from .base import BasePaymentGateway
 from .exceptions import GatewayException
+
+try:
+    import serial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
 
 
 class POSPaymentGateway(BasePaymentGateway):
@@ -23,7 +28,15 @@ class POSPaymentGateway(BasePaymentGateway):
     
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        self.connection_type = self.config.get('connection_type', 'tcp')  # 'serial' or 'tcp'
+        # Force TCP/IP connection, not serial
+        connection_type = self.config.get('connection_type', 'tcp')
+        if connection_type == 'serial':
+            # Override to TCP/IP if serial is requested
+            connection_type = 'tcp'
+            import warnings
+            warnings.warn('Serial connection requested but using TCP/IP instead. Set POS_CONNECTION_TYPE=tcp in .env')
+        
+        self.connection_type = connection_type  # Always 'tcp' for socket connection
         self.serial_port = self.config.get('serial_port', 'COM1')
         self.serial_baudrate = self.config.get('serial_baudrate', 9600)
         self.tcp_host = self.config.get('tcp_host', '192.168.1.100')
@@ -37,6 +50,8 @@ class POSPaymentGateway(BasePaymentGateway):
     def _connect(self):
         """Establish connection to POS device."""
         if self.connection_type == 'serial':
+            if not SERIAL_AVAILABLE:
+                raise GatewayException('pyserial is not installed. Install it with: pip install pyserial')
             try:
                 self._connection = serial.Serial(
                     port=self.serial_port,
@@ -68,6 +83,68 @@ class POSPaymentGateway(BasePaymentGateway):
             finally:
                 self._connection = None
     
+    def test_connection(self) -> Dict[str, Any]:
+        """
+        Test connection to POS device.
+        
+        Returns:
+            Dict[str, Any]: Test result containing:
+                - success: bool - Whether connection was successful
+                - message: str - Status message
+                - connection_type: str - Type of connection used
+                - details: dict - Additional connection details
+        """
+        result = {
+            'success': False,
+            'message': '',
+            'connection_type': self.connection_type,
+            'details': {}
+        }
+        
+        try:
+            # Try to connect
+            self._connect()
+            
+            # If connection successful, try a simple ping/test command
+            # For TCP, just connecting is enough to test
+            # For Serial, we can try to read/write
+            
+            if self.connection_type == 'tcp':
+                result['success'] = True
+                result['message'] = f'اتصال TCP/IP موفق بود (IP: {self.tcp_host}, Port: {self.tcp_port})'
+                result['details'] = {
+                    'host': self.tcp_host,
+                    'port': self.tcp_port,
+                    'timeout': self.timeout
+                }
+            elif self.connection_type == 'serial':
+                # For serial, try to read port status
+                if self._connection and self._connection.is_open:
+                    result['success'] = True
+                    result['message'] = f'اتصال سریال موفق بود (Port: {self.serial_port}, Baudrate: {self.serial_baudrate})'
+                    result['details'] = {
+                        'port': self.serial_port,
+                        'baudrate': self.serial_baudrate,
+                        'timeout': self.timeout
+                    }
+                else:
+                    result['message'] = f'اتصال سریال ناموفق بود (Port: {self.serial_port})'
+            
+            # Disconnect after test
+            self._disconnect()
+            
+        except GatewayException as e:
+            result['message'] = f'خطا در اتصال: {str(e)}'
+            result['details'] = {'error': str(e)}
+        except Exception as e:
+            result['message'] = f'خطای غیرمنتظره: {str(e)}'
+            result['details'] = {'error': str(e)}
+        finally:
+            if self._connection:
+                self._disconnect()
+        
+        return result
+    
     def _send_command(self, command: str) -> str:
         """
         Send command to POS device and receive response.
@@ -88,10 +165,21 @@ class POSPaymentGateway(BasePaymentGateway):
             # Send command
             if self.connection_type == 'serial':
                 self._connection.write(command.encode('utf-8'))
+                # Wait a bit for response
+                time.sleep(0.5)
                 response = self._connection.read(1024).decode('utf-8')
             else:  # TCP
                 self._connection.sendall(command.encode('utf-8'))
-                response = self._connection.recv(1024).decode('utf-8')
+                # Wait for response with timeout
+                self._connection.settimeout(self.timeout)
+                try:
+                    response = self._connection.recv(4096).decode('utf-8')
+                    # If response is empty, try to read more
+                    if not response:
+                        time.sleep(1)
+                        response = self._connection.recv(4096).decode('utf-8')
+                except socket.timeout:
+                    response = ''
             
             return response
         except Exception as e:
@@ -179,6 +267,8 @@ class POSPaymentGateway(BasePaymentGateway):
             'terminal_id': '',
             'raw_response': response
         }
+
+        print(response)
         
         if not response:
             return result
