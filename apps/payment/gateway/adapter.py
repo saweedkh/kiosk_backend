@@ -18,10 +18,18 @@ class PaymentGatewayAdapter:
         if gateway_name == 'mock':
             return MockPaymentGateway(config)
         elif gateway_name == 'pos':
-            # Use .NET DLL if available and configured, otherwise use direct protocol
+            # Smart gateway selection:
+            # 1. If use_dll=True and DLL is available, use DLL (Windows/Mono)
+            # 2. Otherwise, use direct protocol (pos.py) - works on ALL platforms
+            # 
+            # Recommendation: Use direct protocol (pos.py) for cross-platform support
+            # It works on Windows, Mac, Linux without any DLL dependencies
             if use_dll:
+                # Try DLL first, but it will automatically fallback to pos.py if DLL fails
                 return POSNETPaymentGateway(config)
             else:
+                # Use direct protocol implementation - 100% cross-platform
+                # Works on Windows, macOS (ARM64/x86_64), Linux - no DLL needed!
                 return POSPaymentGateway(config)
         
         raise GatewayException(f'Unknown gateway: {gateway_name}')

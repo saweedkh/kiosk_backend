@@ -49,6 +49,30 @@ class POSPaymentGateway(BasePaymentGateway):
     
     def _connect(self):
         """Establish connection to POS device."""
+        # If already connected, reuse the connection
+        if self._connection:
+            try:
+                # Check if connection is still alive
+                if self.connection_type == 'tcp':
+                    # For TCP, try to get socket info to check if alive
+                    try:
+                        self._connection.getpeername()
+                        # Connection is alive, reuse it
+                        return
+                    except (OSError, socket.error):
+                        # Connection is dead, reconnect
+                        self._connection = None
+                elif self.connection_type == 'serial':
+                    if self._connection.is_open:
+                        # Connection is alive, reuse it
+                        return
+                    else:
+                        # Connection is closed, reconnect
+                        self._connection = None
+            except Exception:
+                # Connection check failed, reconnect
+                self._connection = None
+        
         if self.connection_type == 'serial':
             if not SERIAL_AVAILABLE:
                 raise GatewayException('pyserial is not installed. Install it with: pip install pyserial')
@@ -63,8 +87,12 @@ class POSPaymentGateway(BasePaymentGateway):
         elif self.connection_type == 'tcp':
             try:
                 self._connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self._connection.settimeout(self.timeout)
+                # Set socket options to keep connection alive
+                self._connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                # Connect without timeout first
+                self._connection.settimeout(None)  # No timeout for connection
                 self._connection.connect((self.tcp_host, self.tcp_port))
+                print(f"✅ اتصال TCP/IP برقرار شد: {self.tcp_host}:{self.tcp_port}")
             except Exception as e:
                 raise GatewayException(f'Failed to connect to POS via TCP: {str(e)}')
         else:
@@ -145,12 +173,14 @@ class POSPaymentGateway(BasePaymentGateway):
         
         return result
     
-    def _send_command(self, command: str) -> str:
+    def _send_command(self, command, wait_for_response: bool = True, max_wait_time: int = 120) -> str:
         """
         Send command to POS device and receive response.
         
         Args:
             command: Command string to send
+            wait_for_response: Whether to wait for response (for async transactions)
+            max_wait_time: Maximum time to wait for response in seconds
             
         Returns:
             str: Response from POS device
@@ -162,37 +192,188 @@ class POSPaymentGateway(BasePaymentGateway):
             self._connect()
         
         try:
+            # Convert command to bytes if it's a string
+            if isinstance(command, str):
+                command_bytes = command.encode('utf-8')
+            else:
+                command_bytes = command
+            
+            # Debug: Log what we're sending
+            try:
+                command_str = command_bytes.decode('utf-8', errors='replace')[:100]
+                print(f"📤 ارسال درخواست ({len(command_bytes)} bytes): {command_str}...")
+            except:
+                print(f"📤 ارسال درخواست ({len(command_bytes)} bytes): {command_bytes[:50]}...")
+            
             # Send command
             if self.connection_type == 'serial':
-                self._connection.write(command.encode('utf-8'))
+                self._connection.write(command_bytes)
                 # Wait a bit for response
                 time.sleep(0.5)
-                response = self._connection.read(1024).decode('utf-8')
+                response = self._connection.read(1024).decode('utf-8', errors='replace')
             else:  # TCP
-                self._connection.sendall(command.encode('utf-8'))
-                # Wait for response with timeout
-                self._connection.settimeout(self.timeout)
+                # IMPORTANT: Keep connection alive - don't close it!
+                # Send command
+                self._connection.sendall(command_bytes)
+                
+                # Small delay to ensure data is sent
+                time.sleep(0.1)
+                
+                if not wait_for_response:
+                    # For commands that don't need response
+                    return ''
+                
+                # Wait for response - POS devices may take time to respond
+                # Especially for payment transactions that require user interaction
+                # IMPORTANT: Keep connection open and wait for response
+                response = ''
+                start_time = time.time()
+                
+                # Set socket to non-blocking mode for checking, but use timeout for actual reads
+                # This allows us to keep connection alive while waiting
+                self._connection.settimeout(1)  # 1 second timeout per read attempt
+                
+                # First, try to get immediate response (acknowledgment)
                 try:
-                    response = self._connection.recv(4096).decode('utf-8')
-                    # If response is empty, try to read more
-                    if not response:
-                        time.sleep(1)
-                        response = self._connection.recv(4096).decode('utf-8')
+                    # Some POS devices send immediate ACK
+                    chunk = self._connection.recv(4096)
+                    if chunk:
+                        response += chunk.decode('utf-8', errors='ignore')
+                        print(f"📥 دریافت پاسخ اولیه: {response[:100]}...")
                 except socket.timeout:
-                    response = ''
+                    # No immediate response, that's OK - device might be waiting for user
+                    # Connection is still alive, continue waiting
+                    pass
+                except Exception as e:
+                    print(f"⚠️  خطا در دریافت پاسخ اولیه: {e}")
+                    # Don't disconnect - connection might still be valid
+                
+                # Now wait for actual transaction response (user interaction required)
+                # Keep connection alive and check periodically
+                
+                while time.time() - start_time < max_wait_time:
+                    try:
+                        # Try to receive data
+                        chunk = self._connection.recv(4096)
+                        if chunk:
+                            chunk_str = chunk.decode('utf-8', errors='ignore')
+                            response += chunk_str
+                            print(f"📥 دریافت داده: {chunk_str[:100]}...")
+                            
+                            # If we got some data, wait a bit more to see if more is coming
+                            time.sleep(0.5)
+                            # Try to get more data if available
+                            self._connection.settimeout(1)
+                            try:
+                                while True:
+                                    more_chunk = self._connection.recv(4096)
+                                    if not more_chunk:
+                                        break
+                                    more_str = more_chunk.decode('utf-8', errors='ignore')
+                                    response += more_str
+                                    print(f"📥 دریافت داده بیشتر: {more_str[:100]}...")
+                            except socket.timeout:
+                                # No more data, we're done
+                                break
+                            
+                            # If we have a complete response, break
+                            if response and len(response) > 10:  # At least some meaningful response
+                                break
+                        else:
+                            # No data yet, wait a bit
+                            time.sleep(1)
+                    except socket.timeout:
+                        # No response yet, continue waiting
+                        elapsed = int(time.time() - start_time)
+                        if elapsed % 10 == 0 and elapsed > 0:  # Print every 10 seconds
+                            print(f"⏳ منتظر پاسخ... ({elapsed}/{max_wait_time} ثانیه)")
+                        continue
+                    except Exception as e:
+                        # Connection error
+                        print(f"⚠️  خطا در دریافت پاسخ: {e}")
+                        break
+                
+                if not response:
+                    print(f"⚠️  هیچ پاسخی دریافت نشد بعد از {int(time.time() - start_time)} ثانیه")
+                else:
+                    print(f"📥 دریافت پاسخ کامل ({len(response)} chars): {response[:200]}...")
             
             return response
+        except GatewayException:
+            # Re-raise GatewayException as is
+            raise
         except Exception as e:
-            self._disconnect()
+            # Only disconnect on critical errors, not on timeout
+            # Connection might still be valid for retry
+            print(f"⚠️  خطا در ارتباط: {e}")
+            # Don't disconnect immediately - connection might still be valid
+            # self._disconnect()
             raise GatewayException(f'Failed to communicate with POS: {str(e)}')
     
-    def _build_payment_request(self, amount: int, order_number: str, 
-                              additional_data: Dict[str, Any] = None) -> str:
+    def _build_payment_request_exact(self, amount: int, order_number: str, 
+                                     additional_data: Dict[str, Any] = None) -> bytes:
         """
-        Build payment request string according to POS protocol.
+        Build payment request EXACTLY as DLL does - based on DLL tag analysis.
         
-        Based on Pardakht Novin documentation:
-        Format: R{amount}PR{payment_type}AM{amount}CU{customer}...
+        DLL uses tag-based format: PR{type}AM{amount}TE{terminal}ME{merchant}SO{order}...
+        No separators between tags, just concatenated.
+        
+        This is the EXACT format DLL uses based on DLL_INFO.md analysis.
+        """
+        parts = []
+        
+        # PR - Payment Request Type (00 = normal payment)
+        parts.append("PR00")
+        
+        # AM - Amount (12 digits, zero-padded)
+        amount_str = str(amount).zfill(12)
+        parts.append(f"AM{amount_str}")
+        
+        # TE - Terminal ID (8 digits, zero-padded)
+        if self.terminal_id:
+            terminal_id_str = str(self.terminal_id).zfill(8)
+            parts.append(f"TE{terminal_id_str}")
+        
+        # ME - Merchant ID (15 digits, zero-padded)
+        if self.merchant_id:
+            merchant_id_str = str(self.merchant_id).zfill(15)
+            parts.append(f"ME{merchant_id_str}")
+        
+        # SO - Sale Order / Order Number (up to 20 chars, left-padded with spaces)
+        if order_number:
+            order_num = order_number[:20] if len(order_number) > 20 else order_number
+            parts.append(f"SO{order_num.ljust(20)}")
+        
+        # CU - Customer Name (up to 50 chars, left-padded with spaces)
+        if additional_data and 'customer_name' in additional_data:
+            customer_name = additional_data['customer_name'][:50] if len(additional_data['customer_name']) > 50 else additional_data['customer_name']
+            parts.append(f"CU{customer_name.ljust(50)}")
+        
+        # PD - Payment ID (11 digits, zero-padded)
+        if additional_data and 'payment_id' in additional_data:
+            payment_id = str(additional_data['payment_id'])[:11].zfill(11)
+            parts.append(f"PD{payment_id}")
+        
+        # BI - Bill ID (20 digits/chars, zero-padded)
+        if additional_data and 'bill_id' in additional_data:
+            bill_id = str(additional_data['bill_id'])[:20].zfill(20)
+            parts.append(f"BI{bill_id}")
+        
+        # Join all parts (NO separator - this is key!)
+        message = "".join(parts)
+        
+        # Convert to ASCII bytes (POS devices use ASCII, not UTF-8)
+        return message.encode('ascii')
+    
+    def _build_payment_request(self, amount: int, order_number: str, 
+                              additional_data: Dict[str, Any] = None) -> bytes:
+        """
+        Build payment request according to POS protocol.
+        
+        Based on DLL analysis (DLL_INFO.md), DLL uses tag-based format:
+        PR{type}AM{amount}TE{terminal}ME{merchant}SO{order}...
+        
+        This is the EXACT format - no separators, just concatenated tags.
         
         Args:
             amount: Payment amount in Rial
@@ -200,48 +381,135 @@ class POSPaymentGateway(BasePaymentGateway):
             additional_data: Additional data for payment
             
         Returns:
-            str: Formatted request string
+            bytes: Formatted request bytes (ready to send)
         """
-        # Format amount: 12 digits, zero-padded (based on PDF documentation)
-        amount_str = str(amount).zfill(12)
+        format_type = self.config.get('pos_message_format', 'dll_exact')
         
-        # Build request string according to protocol
-        # R = Request, PR = Payment Request, AM = Amount
-        request = f"R{amount_str}PR00AM{amount_str}"
+        if format_type == 'dll_exact':
+            # Use EXACT DLL format (based on DLL tag analysis)
+            return self._build_payment_request_exact(amount, order_number, additional_data)
         
-        # Terminal ID (TE tag)
-        if self.terminal_id:
-            terminal_id_str = str(self.terminal_id).zfill(8)
-            request += f"TE{terminal_id_str}"
-        
-        # Merchant ID (ME tag) - if needed
-        if self.merchant_id:
-            merchant_id_str = str(self.merchant_id).zfill(8)
-            request += f"ME{merchant_id_str}"
-        
-        # Order number (SO tag - Sale Order)
-        if order_number:
-            order_num = order_number[:20] if len(order_number) > 20 else order_number
-            request += f"SO{order_num.zfill(20)}"
-        
-        # Additional data
-        if additional_data:
-            # Customer name (CU tag)
-            if 'customer_name' in additional_data:
-                customer_name = additional_data['customer_name'][:50]
-                request += f"CU{customer_name.zfill(50)}"
+        elif format_type == 'iso8583_like':
+            # Try ISO 8583-like format (common in POS devices)
+            # Format: STX + Message + ETX + LRC
+            # Message format: MTI (4) + Bitmap + Fields
+            # For simplicity, let's try a simpler format first
             
-            # Payment ID (PD tag) - if provided
-            if 'payment_id' in additional_data:
-                payment_id = str(additional_data['payment_id'])[:11]
-                request += f"PD{payment_id.zfill(11)}"
+            # Format amount: 12 digits, zero-padded
+            amount_str = str(amount).zfill(12)
             
-            # Bill ID (BI tag) - if provided
-            if 'bill_id' in additional_data:
-                bill_id = str(additional_data['bill_id'])[:20]
-                request += f"BI{bill_id.zfill(20)}"
+            # Build message parts
+            request_parts = []
+            
+            # MTI (Message Type Indicator) - 0200 = Financial Transaction Request
+            request_parts.append("0200")
+            
+            # Bitmap (simplified - just indicate which fields are present)
+            # For now, use a simple bitmap
+            bitmap = "E000000000000000"  # Simplified bitmap
+            request_parts.append(bitmap)
+            
+            # Field 4: Amount (12 digits)
+            request_parts.append(amount_str)
+            
+            # Field 11: System Trace Audit Number (6 digits) - use timestamp
+            import time
+            trace_num = str(int(time.time()) % 1000000).zfill(6)
+            request_parts.append(trace_num)
+            
+            # Field 41: Terminal ID (8 chars)
+            if self.terminal_id:
+                terminal_id_str = str(self.terminal_id).zfill(8)
+                request_parts.append(terminal_id_str)
+            
+            # Field 42: Merchant ID (15 chars)
+            if self.merchant_id:
+                merchant_id_str = str(self.merchant_id).zfill(15)
+                request_parts.append(merchant_id_str)
+            
+            # Join with field separators (usually \x1C or |)
+            message = "\x1C".join(request_parts)
+            
+            # Add STX (0x02) at start and ETX (0x03) at end
+            request_bytes = b'\x02' + message.encode('ascii') + b'\x03'
+            
+        elif format_type == 'simple_tlv':
+            # Try simple TLV format
+            import struct
+            
+            # Format amount: 12 digits, zero-padded
+            amount_str = str(amount).zfill(12)
+            
+            tlv_parts = []
+            
+            # Tag: Amount (0x01), Length: 12, Value: amount
+            tlv_parts.append(b'\x01')
+            tlv_parts.append(struct.pack('B', 12))
+            tlv_parts.append(amount_str.encode('ascii'))
+            
+            # Tag: Terminal ID (0x02), Length: 8, Value: terminal_id
+            if self.terminal_id:
+                terminal_id_str = str(self.terminal_id).zfill(8)
+                tlv_parts.append(b'\x02')
+                tlv_parts.append(struct.pack('B', 8))
+                tlv_parts.append(terminal_id_str.encode('ascii'))
+            
+            # Tag: Merchant ID (0x03), Length: 15, Value: merchant_id
+            if self.merchant_id:
+                merchant_id_str = str(self.merchant_id).zfill(15)
+                tlv_parts.append(b'\x03')
+                tlv_parts.append(struct.pack('B', 15))
+                tlv_parts.append(merchant_id_str.encode('ascii'))
+            
+            request_bytes = b''.join(tlv_parts)
+            
+        else:  # 'simple' or 'with_terminator' - original format
+            # Format amount: 12 digits, zero-padded
+            amount_str = str(amount).zfill(12)
+            
+            # Original simple string format
+            request_parts = []
+            
+            # PR = Payment Request, AM = Amount
+            request_parts.append(f"PR00")  # Payment type: 00 = normal payment
+            request_parts.append(f"AM{amount_str}")  # Amount
+            
+            # Terminal ID (TE tag) - 8 digits
+            if self.terminal_id:
+                terminal_id_str = str(self.terminal_id).zfill(8)
+                request_parts.append(f"TE{terminal_id_str}")
+            
+            # Merchant ID (ME tag) - if needed, usually 15 digits
+            if self.merchant_id:
+                merchant_id_str = str(self.merchant_id).zfill(15)
+                request_parts.append(f"ME{merchant_id_str}")
+            
+            # Order number (SO tag - Sale Order) - up to 20 chars
+            if order_number:
+                order_num = order_number[:20] if len(order_number) > 20 else order_number
+                request_parts.append(f"SO{order_num.ljust(20)}")
+            
+            # Additional data
+            if additional_data:
+                # Customer name (CU tag) - up to 50 chars
+                if 'customer_name' in additional_data:
+                    customer_name = additional_data['customer_name'][:50]
+                    request_parts.append(f"CU{customer_name.ljust(50)}")
+            
+            # Join all parts
+            request_string = "".join(request_parts)
+            
+            # Convert to bytes
+            try:
+                request_bytes = request_string.encode('utf-8')
+            except:
+                request_bytes = request_string.encode('ascii', errors='ignore')
+            
+            # Add terminator if needed
+            if format_type == 'with_terminator':
+                request_bytes = request_bytes + b'\r\n'
         
-        return request
+        return request_bytes
     
     def _parse_response(self, response: str) -> Dict[str, Any]:
         """
@@ -373,16 +641,25 @@ class POSPaymentGateway(BasePaymentGateway):
         order_number = order_details.get('order_number', '')
         customer_name = order_details.get('customer_name', '')
         
-        # Build payment request
-        request = self._build_payment_request(
+        # Build payment request (returns bytes)
+        request_bytes = self._build_payment_request(
             amount=amount,
             order_number=order_number,
             additional_data={'customer_name': customer_name} if customer_name else None
         )
         
         try:
-            # Send payment request to POS
-            response = self._send_command(request)
+            # Send payment request to POS and wait for response
+            # Payment transactions require user interaction (card swipe, PIN entry)
+            # So we need to wait longer (up to 2 minutes)
+            print("\n⚠️  توجه: مبلغ روی دستگاه نمایش داده می‌شود.")
+            print("   لطفاً منتظر بمانید تا:")
+            print("   1. کارت را بکشید")
+            print("   2. رمز را وارد کنید")
+            print("   3. یا در دستگاه لغو کنید")
+            print(f"   (حداکثر 120 ثانیه منتظر می‌مانیم)\n")
+            
+            response = self._send_command(request_bytes, wait_for_response=True, max_wait_time=120)
             
             # Parse response
             parsed_response = self._parse_response(response)
@@ -406,7 +683,9 @@ class POSPaymentGateway(BasePaymentGateway):
         except Exception as e:
             raise GatewayException(f'Failed to initiate payment: {str(e)}')
         finally:
-            self._disconnect()
+            # Don't disconnect immediately - keep connection for potential retries
+            # self._disconnect()
+            pass
     
     def verify_payment(self, transaction_id: str, **kwargs) -> Dict[str, Any]:
         """

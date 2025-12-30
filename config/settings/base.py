@@ -199,6 +199,7 @@ PAYMENT_GATEWAY_CONFIG = {
     'tcp_host': os.getenv('POS_TCP_HOST', '192.168.1.100'),
     'tcp_port': int(os.getenv('POS_TCP_PORT', '1362')),
     'timeout': int(os.getenv('POS_TIMEOUT', '30')),
+    'pos_message_format': os.getenv('POS_MESSAGE_FORMAT', 'dll_exact'),  # 'dll_exact', 'simple', 'with_terminator', 'iso8583_like', 'simple_tlv'
     # DLL Configuration (if using DLL)
     'pos_use_dll': os.getenv('POS_USE_DLL', 'False') == 'True',
     'dll_path': os.getenv('POS_DLL_PATH', ''),  # Path to DLL file (e.g., 'C:/path/to/pna.pcpos.dll')

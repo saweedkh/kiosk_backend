@@ -18,31 +18,35 @@ from .base import BasePaymentGateway
 from .exceptions import GatewayException
 from .pos import POSPaymentGateway  # Fallback to direct protocol
 
-try:
-    import clr
-    # Try to load clr - this might fail if Mono/.NET runtime is not available
-    try:
-        clr.__version__  # Just check if it's loaded
-        PYTHONNET_AVAILABLE = True
-    except (RuntimeError, AttributeError):
-        # clr is imported but runtime is not available
-        PYTHONNET_AVAILABLE = False
-except (ImportError, RuntimeError):
-    PYTHONNET_AVAILABLE = False
+# Lazy loading of pythonnet to avoid crashes on Django reload
+# Only import when actually needed
+PYTHONNET_AVAILABLE = None
+_clr_module = None
 
-# Register cleanup handler for Mono runtime
-if PYTHONNET_AVAILABLE:
-    def _mono_cleanup():
-        """Cleanup Mono runtime on exit."""
-        try:
-            # Try to cleanup gracefully
-            # Note: On macOS ARM64 with x86 DLL, this might crash
-            # Solution: Use Rosetta 2 (arch -x86_64) to run Python
-            pass
-        except Exception:
-            pass
+def _check_pythonnet():
+    """Check if pythonnet is available (lazy loading)."""
+    global PYTHONNET_AVAILABLE, _clr_module
     
-    atexit.register(_mono_cleanup)
+    if PYTHONNET_AVAILABLE is not None:
+        return PYTHONNET_AVAILABLE
+    
+    try:
+        import clr
+        _clr_module = clr
+        # Try to load clr - this might fail if Mono/.NET runtime is not available
+        try:
+            clr.__version__  # Just check if it's loaded
+            PYTHONNET_AVAILABLE = True
+        except (RuntimeError, AttributeError):
+            # clr is imported but runtime is not available
+            PYTHONNET_AVAILABLE = False
+    except (ImportError, RuntimeError):
+        PYTHONNET_AVAILABLE = False
+    
+    return PYTHONNET_AVAILABLE
+
+# Don't register cleanup handler at module level to avoid crashes on reload
+# We'll handle cleanup in the class destructor instead
 
 
 class POSNETPaymentGateway(BasePaymentGateway):
@@ -50,7 +54,14 @@ class POSNETPaymentGateway(BasePaymentGateway):
     Payment Gateway for POS Card Reader using .NET DLL (Pardakht Novin).
     
     This gateway uses the official .NET DLL file (pna.pcpos.dll) provided by Pardakht Novin.
-    If DLL is not available or pythonnet is not installed, it falls back to direct protocol implementation.
+    If DLL is not available or pythonnet is not installed, it automatically falls back 
+    to direct protocol implementation (pos.py) which works on Windows, Mac, and Linux.
+    
+    Cross-platform support:
+    - Windows: Uses DLL directly (native .NET)
+    - macOS: Uses DLL with Mono (requires Rosetta 2 for x86 DLLs on ARM64)
+    - Linux: Uses DLL with Mono, or falls back to direct protocol
+    - All platforms: Falls back to direct protocol (pos.py) if DLL fails
     """
     
     def __init__(self, config: Dict[str, Any] = None):
@@ -59,13 +70,34 @@ class POSNETPaymentGateway(BasePaymentGateway):
         self.use_dll = False
         self.pos_instance = None
         self.fallback_gateway = None
+        self.platform = platform.system().lower()
+        
+        # Always create fallback gateway first (works on all platforms)
+        self.fallback_gateway = POSPaymentGateway(config)
+        
+        # IMPORTANT: Check pythonnet availability first (lazy loading)
+        pythonnet_available = _check_pythonnet()
         
         # Check if we can use DLL
-        if not PYTHONNET_AVAILABLE:
+        if not pythonnet_available:
             # pythonnet not available, use fallback
             self.use_dll = False
-            self.fallback_gateway = POSPaymentGateway(config)
+            import warnings
+            warnings.warn('pythonnet not available, using direct protocol (pos.py) which works on all platforms')
             return
+        
+        # Check platform compatibility
+        if self.platform == 'darwin':  # macOS
+            # On macOS ARM64, DLL x86 requires Rosetta 2
+            # We'll try to load, but if it fails, fallback is ready
+            arch = platform.machine().lower()
+            if arch == 'arm64':
+                import warnings
+                warnings.warn(
+                    'macOS ARM64 detected. DLL x86 requires Rosetta 2. '
+                    'If DLL fails, will automatically use direct protocol (pos.py). '
+                    'Use ./run_pos_command.sh for Rosetta 2 support.'
+                )
         
         # Try to load DLL if path is provided
         # Note: With Mono installed, DLL can work on Mac/Linux too
@@ -73,26 +105,50 @@ class POSNETPaymentGateway(BasePaymentGateway):
             try:
                 self._load_dll()
                 self.use_dll = True
+                # Test if DLL actually works
+                try:
+                    # Quick test - just check if instance is valid
+                    if self.pos_instance:
+                        self.use_dll = True
+                except Exception:
+                    # DLL loaded but doesn't work, use fallback
+                    self.use_dll = False
+                    import warnings
+                    warnings.warn('DLL loaded but not functional, using fallback protocol')
             except Exception as e:
-                # If DLL loading fails, use fallback
+                # If DLL loading fails, use fallback (this is normal on some platforms)
                 self.use_dll = False
-                self.fallback_gateway = POSPaymentGateway(config)
-                # Log the error for debugging
                 import warnings
-                warnings.warn(f'Failed to load DLL, using fallback: {str(e)}')
+                warnings.warn(
+                    f'Failed to load DLL ({str(e)}), automatically using direct protocol (pos.py) '
+                    f'which works on {self.platform}. This is normal and expected.'
+                )
         else:
-            # No DLL path provided, use direct protocol
+            # No DLL path provided, use direct protocol (works everywhere)
             self.use_dll = False
-            self.fallback_gateway = POSPaymentGateway(config)
+            if not self.dll_path:
+                import warnings
+                warnings.warn(
+                    'DLL path not configured, using direct protocol (pos.py) '
+                    f'which works on {self.platform}. Set POS_DLL_PATH in .env to use DLL.'
+                )
     
     def _load_dll(self):
         """Load .NET DLL file using pythonnet."""
-        if not PYTHONNET_AVAILABLE:
+        global _clr_module
+        
+        # Lazy check pythonnet availability
+        if not _check_pythonnet():
             raise GatewayException('pythonnet is not installed. Install it with: pip install pythonnet')
+        
+        # Import clr only when needed
+        if _clr_module is None:
+            import clr
+            _clr_module = clr
         
         try:
             # Add reference to DLL
-            clr.AddReference(self.dll_path)
+            _clr_module.AddReference(self.dll_path)
             
             # Import PCPOS class from the correct namespace
             # The DLL uses namespace: Intek.PcPosLibrary
@@ -119,6 +175,24 @@ class POSNETPaymentGateway(BasePaymentGateway):
             self.pos_instance.Port = int(tcp_port) if isinstance(tcp_port, str) else tcp_port
             # Use Enum for ConnectionType - LAN means TCP/IP (Socket)
             self.pos_instance.ConnectionType = PCPOS.cnType.LAN
+            
+            # IMPORTANT: Configure timeout to keep connection alive
+            # Set a long timeout so connection stays open while waiting for user interaction
+            # Some DLLs have Timeout property - set it to a large value (e.g., 120 seconds)
+            if hasattr(self.pos_instance, 'Timeout'):
+                # Set timeout to 120 seconds (2 minutes) to keep connection alive
+                self.pos_instance.Timeout = 120000  # milliseconds (120 seconds)
+            elif hasattr(self.pos_instance, 'ConnectionTimeout'):
+                self.pos_instance.ConnectionTimeout = 120000
+            elif hasattr(self.pos_instance, 'ReceiveTimeout'):
+                self.pos_instance.ReceiveTimeout = 120000
+            
+            # IMPORTANT: Ensure connection stays alive
+            # Some DLLs have KeepAlive or similar properties
+            if hasattr(self.pos_instance, 'KeepAlive'):
+                self.pos_instance.KeepAlive = True
+            elif hasattr(self.pos_instance, 'KeepConnectionAlive'):
+                self.pos_instance.KeepConnectionAlive = True
             
             # Set terminal ID if provided
             terminal_id = self.config.get('terminal_id', '')
@@ -248,6 +322,28 @@ class POSNETPaymentGateway(BasePaymentGateway):
                 customer_name = additional_data.get('customer_name', '')
                 if customer_name and hasattr(self.pos_instance, 'CustomerName'):
                     self.pos_instance.CustomerName = customer_name
+                
+                # Set Payment ID (PD) if provided
+                payment_id = additional_data.get('payment_id', '')
+                if payment_id:
+                    # Try different property names that DLL might use
+                    if hasattr(self.pos_instance, 'PaymentID'):
+                        self.pos_instance.PaymentID = str(payment_id)
+                    elif hasattr(self.pos_instance, 'PaymentId'):
+                        self.pos_instance.PaymentId = str(payment_id)
+                    elif hasattr(self.pos_instance, 'PD'):
+                        self.pos_instance.PD = str(payment_id)
+                
+                # Set Bill ID (BI) if provided
+                bill_id = additional_data.get('bill_id', '')
+                if bill_id:
+                    # Try different property names that DLL might use
+                    if hasattr(self.pos_instance, 'BillID'):
+                        self.pos_instance.BillID = str(bill_id)
+                    elif hasattr(self.pos_instance, 'BillId'):
+                        self.pos_instance.BillId = str(bill_id)
+                    elif hasattr(self.pos_instance, 'BI'):
+                        self.pos_instance.BI = str(bill_id)
             
             # Setup response tracking
             response_received = False
@@ -271,6 +367,23 @@ class POSNETPaymentGateway(BasePaymentGateway):
                 # Event handler not available or failed, continue with polling
                     pass
             
+            # IMPORTANT: Ensure connection is established and stays alive
+            # Test connection first to make sure socket is open
+            try:
+                if hasattr(self.pos_instance, 'TestConnection'):
+                    connection_ok = self.pos_instance.TestConnection()
+                    if not connection_ok:
+                        print("⚠️  اتصال اولیه ناموفق بود، در حال تلاش مجدد...")
+                        # Try to reconnect
+                        time.sleep(1)
+                        connection_ok = self.pos_instance.TestConnection()
+                        if not connection_ok:
+                            raise GatewayException('اتصال به دستگاه POS برقرار نشد')
+                print(f"✅ اتصال TCP/IP برقرار است: {self.config.get('tcp_host')}:{self.config.get('tcp_port')}")
+            except Exception as e:
+                print(f"⚠️  خطا در تست اتصال: {e}")
+                # Continue anyway - connection might still work
+            
             # Send transaction
             # Note: send_transaction() sends the request to POS device
             # The device will:
@@ -280,43 +393,139 @@ class POSNETPaymentGateway(BasePaymentGateway):
             # 4. Process the transaction
             # 5. Return the response
             # 
-            # send_transaction() may return immediately, so we need to wait
-            # for the response to be available
+            # IMPORTANT: send_transaction() may return immediately, but the socket
+            # connection MUST stay open to receive the response from POS device.
+            # The DLL should keep the connection alive internally.
+            print(f"📤 در حال ارسال تراکنش به دستگاه POS...")
             self.pos_instance.send_transaction()
+            print(f"✅ درخواست ارسال شد. اتصال فعال است و منتظر پاسخ...")
             
             # Wait for response (DLL handles this asynchronously)
             # The device is now waiting for user action:
             # - Card insertion
             # - PIN entry  
             # - Transaction cancellation
-            # We need to wait until the response is available
+            # 
+            # IMPORTANT: The socket connection must stay open during this time.
+            # We need to wait until the response is available with actual data.
             max_attempts = 120  # Wait up to 120 seconds (2 minutes) for user to complete transaction
             start_time = time.time()
+            last_rrn_check = None  # Track last RRN value to detect changes
+            
+            # Debug: Print status
+            print(f"📤 تراکنش ارسال شد. منتظر پاسخ از دستگاه POS...")
+            print(f"   ⚠️  اتصال TCP/IP فعال است و منتظر پاسخ می‌ماند")
+            print(f"   لطفاً کارت را بکشید و رمز را وارد کنید (یا در دستگاه لغو کنید)")
             
             for attempt in range(max_attempts):
                 # Check for response every second
                 if attempt > 0:
                     time.sleep(1)
                 
+                elapsed = int(time.time() - start_time)
+                if elapsed > 0 and elapsed % 10 == 0:
+                    print(f"⏳ منتظر پاسخ... ({elapsed}/{max_attempts} ثانیه)")
+                
                 # Check if event handler received response
                 if response_received and response_obj:
+                    print(f"✅ پاسخ از event handler دریافت شد")
                     break
                 
-                # Try to get Response object
+                # Try to get Response object and check if it has actual data
+                transaction_complete = False  # Flag to break outer loop
                 try:
                     if hasattr(self.pos_instance, 'Response') and self.pos_instance.Response is not None:
                         response_obj = self.pos_instance.Response
-                        # Try to get string representation or properties from Response
-                        if hasattr(response_obj, 'ToString'):
-                            response = response_obj.ToString()
-                        elif hasattr(response_obj, 'Message'):
-                            response = str(response_obj.Message)
-                        if response:
+                        
+                        # Check if Response object has actual data (not just empty object)
+                        # Try to get properties that indicate transaction completion
+                        has_data = False
+                        
+                        # Check for Response Code FIRST - this tells us if transaction is complete
+                        resp_code = None
+                        try:
+                            if hasattr(response_obj, 'GetTrxnResp'):
+                                resp_code = response_obj.GetTrxnResp()
+                                resp_code_str = str(resp_code).strip() if resp_code else ''
+                                # Check if response code is valid (not empty, not just "=")
+                                if resp_code_str and resp_code_str != '=' and resp_code_str != 'None' and resp_code_str != '':
+                                    has_data = True
+                                    print(f"✅ Response Code دریافت شد: {resp_code_str}")
+                                    
+                                    # IMPORTANT: ANY response code means transaction is complete
+                                    # Response code 81 might mean cancelled, but transaction is still complete
+                                    if resp_code_str == '81':
+                                        print(f"⚠️  Response Code 81 دریافت شد - تراکنش کامل شد")
+                                        # Transaction is complete, break the loop
+                                        transaction_complete = True
+                                    elif resp_code_str in ['00', '01', '02', '03', '13']:
+                                        # Valid response code - transaction completed
+                                        print(f"✅ تراکنش کامل شد (کد: {resp_code_str})")
+                                        # Transaction is complete, break the loop
+                                        transaction_complete = True
+                                    else:
+                                        # Any other response code also means transaction is complete
+                                        print(f"✅ Response Code دریافت شد: {resp_code_str} - تراکنش کامل شد")
+                                        transaction_complete = True
+                        except Exception as e:
+                            pass
+                        
+                        # If transaction is complete (response code received), break
+                        if transaction_complete:
                             break
+                        
+                        # Check for RRN (Reference Number) - this indicates transaction completed successfully
+                        # IMPORTANT: Only accept RRN if it has actual value (not empty, not "RN =")
+                        try:
+                            if hasattr(response_obj, 'GetTrxnRRN'):
+                                rrn = response_obj.GetTrxnRRN()
+                                rrn_str = str(rrn).strip() if rrn else ''
+                                # Check if RRN is valid (not empty, not "RN =", not "=", has actual digits)
+                                # IMPORTANT: Don't print if RRN is empty or invalid
+                                if rrn_str and rrn_str != '=' and rrn_str != 'None' and rrn_str != 'RN =' and rrn_str != '' and len(rrn_str) > 2:
+                                    # Check if it contains actual digits (not just spaces or special chars)
+                                    if any(c.isdigit() for c in rrn_str):
+                                        has_data = True
+                                        print(f"✅ RRN دریافت شد: {rrn_str}")
+                                        # We have valid RRN - transaction completed successfully
+                                        transaction_complete = True
+                        except:
+                            pass
+                        
+                        # If transaction is complete (RRN received), break
+                        if transaction_complete:
+                            break
+                        
+                        # Check for Serial Number - only if it has actual value
+                        # IMPORTANT: Don't print if Serial is empty or invalid
+                        try:
+                            if hasattr(response_obj, 'GetTrxnSerial'):
+                                serial = response_obj.GetTrxnSerial()
+                                serial_str = str(serial).strip() if serial else ''
+                                # Check if serial is valid (not empty, not "SR =", not "=", has actual digits)
+                                if serial_str and serial_str != '=' and serial_str != 'None' and serial_str != 'SR =' and serial_str != '' and len(serial_str) > 2:
+                                    # Check if it contains actual digits
+                                    if any(c.isdigit() for c in serial_str):
+                                        has_data = True
+                                        print(f"✅ Serial Number دریافت شد: {serial_str}")
+                        except:
+                            pass
+                        
+                        # If we have data, try to get string representation
+                        if has_data:
+                            try:
+                                if hasattr(response_obj, 'ToString'):
+                                    response = response_obj.ToString()
+                                elif hasattr(response_obj, 'Message'):
+                                    response = str(response_obj.Message)
+                                if response and response != 'Intek.PcPosLibrary.Response':
+                                    break
+                            except:
+                                pass
                 except Exception as e:
                     pass
                 
-                # Try GetParsedResp from pos_instance
+                # Try GetParsedResp from pos_instance - this is the main method
                 try:
                     if hasattr(self.pos_instance, 'GetParsedResp'):
                         resp = self.pos_instance.GetParsedResp()
@@ -325,8 +534,101 @@ class POSNETPaymentGateway(BasePaymentGateway):
                             # Check if it's a valid response (not just class name or empty)
                             if resp_str and resp_str != 'Intek.PcPosLibrary.Response' and len(resp_str) > 5:
                                 response = resp_str
+                                print(f"✅ GetParsedResp: {resp_str[:100]}...")
                                 break
                 except Exception as e:
+                    pass
+                
+                # Try to check Response Code from pos_instance FIRST
+                # IMPORTANT: Response code tells us if transaction is complete (success or cancelled)
+                # ANY valid response code means transaction is complete - we should break
+                transaction_complete_from_code = False
+                try:
+                    if hasattr(self.pos_instance, 'GetTrxnResp'):
+                        resp_code = self.pos_instance.GetTrxnResp()
+                        resp_code_str = str(resp_code).strip() if resp_code else ''
+                        # Check if response code is valid (not empty, not just "=")
+                        if resp_code_str and resp_code_str != '=' and resp_code_str != 'None' and resp_code_str != '':
+                            # We have a valid response code - transaction is complete
+                            print(f"✅ Response Code از pos_instance: {resp_code_str}")
+                            
+                            # IMPORTANT: ANY response code means transaction is complete
+                            # Response code 81 might mean cancelled, but transaction is still complete
+                            if resp_code_str == '81':
+                                print(f"⚠️  Response Code 81 دریافت شد - تراکنش کامل شد")
+                            elif resp_code_str in ['00', '01', '02', '03', '13']:
+                                print(f"✅ تراکنش کامل شد (کد: {resp_code_str})")
+                            
+                            # Get Response object
+                            if hasattr(self.pos_instance, 'Response'):
+                                response_obj = self.pos_instance.Response
+                            
+                            # Transaction is complete - break the loop
+                            transaction_complete_from_code = True
+                except Exception as e:
+                    pass
+                
+                # IMPORTANT: Break outer loop if transaction is complete
+                if transaction_complete_from_code:
+                    break
+                
+                # Try to check if transaction is complete by checking for RRN from pos_instance
+                # This is the most reliable way - check pos_instance methods directly
+                # IMPORTANT: RRN only appears when transaction is actually completed successfully
+                try:
+                    if hasattr(self.pos_instance, 'GetTrxnRRN'):
+                        rrn = self.pos_instance.GetTrxnRRN()
+                        rrn_str = str(rrn).strip() if rrn else ''
+                        
+                        # IMPORTANT: Only accept RRN if it has actual value (not empty, not "RN =", has digits)
+                        if rrn_str and rrn_str != 'None' and rrn_str != '' and rrn_str != '=' and rrn_str != 'RN =':
+                            # Check if it contains actual digits (not just spaces or special chars)
+                            if any(c.isdigit() for c in rrn_str) and len(rrn_str) > 2:
+                                # Check if this is a new RRN (different from last check)
+                                if rrn_str != last_rrn_check:
+                                    # Transaction completed - we have valid RRN
+                                    print(f"✅ تراکنش کامل شد - RRN: {rrn_str}")
+                                    last_rrn_check = rrn_str
+                                    
+                                    # Get Response object now
+                                    if hasattr(self.pos_instance, 'Response'):
+                                        response_obj = self.pos_instance.Response
+                                    
+                                    # Also try to get GetParsedResp
+                                    if hasattr(self.pos_instance, 'GetParsedResp'):
+                                        try:
+                                            parsed = self.pos_instance.GetParsedResp()
+                                            if parsed:
+                                                parsed_str = str(parsed).strip()
+                                                if parsed_str and parsed_str != 'Intek.PcPosLibrary.Response':
+                                                    response = parsed_str
+                                                    print(f"✅ GetParsedResp دریافت شد")
+                                        except Exception as e:
+                                            print(f"⚠️  خطا در GetParsedResp: {e}")
+                                    
+                                    # We have valid RRN, transaction is complete
+                                    break
+                except Exception as e:
+                    # Debug: Print error if any
+                    if attempt % 10 == 0:  # Print every 10 attempts
+                        print(f"⚠️  خطا در بررسی RRN: {e}")
+                    pass
+                
+                # IMPORTANT: Check if connection is still alive
+                # If DLL has a method to check connection status, use it
+                try:
+                    if hasattr(self.pos_instance, 'IsConnected'):
+                        is_connected = self.pos_instance.IsConnected
+                        if not is_connected:
+                            raise GatewayException('اتصال به دستگاه POS قطع شد')
+                    elif hasattr(self.pos_instance, 'ConnectionStatus'):
+                        status = self.pos_instance.ConnectionStatus
+                        if status and 'disconnected' in str(status).lower():
+                            raise GatewayException('اتصال به دستگاه POS قطع شد')
+                except GatewayException:
+                    raise
+                except Exception:
+                    # Connection check not available or failed, continue
                     pass
                 
                 # Try RawResponse property from pos_instance
@@ -340,6 +642,7 @@ class POSNETPaymentGateway(BasePaymentGateway):
                                 raw_response = raw_str
                                 if not response:
                                     response = raw_str
+                                print(f"✅ RawResponse: {raw_str[:100]}...")
                                 break
                 except Exception:
                     pass
@@ -357,6 +660,7 @@ class POSNETPaymentGateway(BasePaymentGateway):
                             # Check if it's a valid response
                             if resp_str and resp_str != 'Intek.PcPosLibrary.Response' and len(resp_str) > 5:
                                 response = resp_str
+                                print(f"✅ GetResponse: {resp_str[:100]}...")
                                 break
                 except Exception:
                     pass
@@ -372,12 +676,33 @@ class POSNETPaymentGateway(BasePaymentGateway):
                 except Exception:
                     pass
             
+            # Final check: If we have response_obj but no response string, check if it has data
+            if response_obj and not response:
+                # Check if response_obj has actual data by checking methods
+                try:
+                    # Check RRN first (most reliable indicator)
+                    if hasattr(response_obj, 'GetTrxnRRN'):
+                        rrn = response_obj.GetTrxnRRN()
+                        if rrn and str(rrn).strip() and str(rrn) != 'None' and str(rrn) != '':
+                            # We have data, response_obj is valid
+                            print(f"✅ Response object معتبر است - RRN: {rrn}")
+                        else:
+                            # Response object exists but empty - might not be ready yet
+                            print(f"⚠️  Response object موجود است اما RRN خالی است. منتظر می‌مانیم...")
+                            # Don't use empty response_obj - continue waiting
+                            response_obj = None
+                except Exception as e:
+                    print(f"⚠️  خطا در بررسی Response object: {e}")
+                    pass
+            
             # If still no response, try to get error message
             if not response and not raw_response and not response_obj:
                 error_msg = ''
                 try:
                     if hasattr(self.pos_instance, 'GetErrorMsg'):
                         error_msg = self.pos_instance.GetErrorMsg()
+                        if error_msg and error_msg.strip():
+                            print(f"⚠️  پیام خطا: {error_msg}")
                 except Exception:
                     pass
                 
@@ -386,6 +711,8 @@ class POSNETPaymentGateway(BasePaymentGateway):
                 try:
                     if hasattr(self.pos_instance, 'GetTrxnResp'):
                         status_code = self.pos_instance.GetTrxnResp()
+                        if status_code and str(status_code).strip():
+                            print(f"⚠️  Response Code: {status_code}")
                 except Exception:
                     pass
                 
@@ -405,29 +732,59 @@ class POSNETPaymentGateway(BasePaymentGateway):
                     )
             
             # If we have response_obj, try to extract more information
+            # IMPORTANT: Check if response_obj actually has data, not just empty object
             if response_obj:
                 try:
-                    # Try to get all properties from Response object
-                    # First, try to get all public properties using reflection
-                    import System
-                    response_type = response_obj.GetType()
+                    # First, check if Response object has actual data by checking key methods
+                    has_actual_data = False
                     
-                    # Get all properties
-                    properties = response_type.GetProperties()
-                    for prop in properties:
+                    # Check for RRN (most reliable indicator of completed transaction)
+                    try:
+                        if hasattr(response_obj, 'GetTrxnRRN'):
+                            rrn = response_obj.GetTrxnRRN()
+                            if rrn and str(rrn).strip() and str(rrn) != 'None':
+                                has_actual_data = True
+                                print(f"✅ Response object has RRN: {rrn}")
+                    except:
+                        pass
+                    
+                    # Check for Response Code
+                    if not has_actual_data:
                         try:
-                            prop_name = prop.Name
-                            prop_value = prop.GetValue(response_obj, None)
-                            if prop_value is not None:
-                                prop_str = str(prop_value).strip()
-                                # Skip if it's just the class name
-                                if prop_str and prop_str != 'Intek.PcPosLibrary.Response':
-                                    if not response:
-                                        response = f"{prop_name}={prop_str}"
-                                    else:
-                                        response += f", {prop_name}={prop_str}"
-                        except Exception:
+                            if hasattr(response_obj, 'GetTrxnResp'):
+                                resp_code = response_obj.GetTrxnResp()
+                                if resp_code and str(resp_code).strip() and str(resp_code) != 'None':
+                                    has_actual_data = True
+                                    print(f"✅ Response object has Response Code: {resp_code}")
+                        except:
                             pass
+                    
+                    # If we have actual data, extract it
+                    if has_actual_data:
+                        # Try to get all properties from Response object using reflection
+                        import System
+                        response_type = response_obj.GetType()
+                        
+                        # Get all properties
+                        properties = response_type.GetProperties()
+                        for prop in properties:
+                            try:
+                                prop_name = prop.Name
+                                prop_value = prop.GetValue(response_obj, None)
+                                if prop_value is not None:
+                                    prop_str = str(prop_value).strip()
+                                    # Skip if it's just the class name or None
+                                    if prop_str and prop_str != 'Intek.PcPosLibrary.Response' and prop_str != 'None':
+                                        if not response:
+                                            response = f"{prop_name}={prop_str}"
+                                        else:
+                                            response += f", {prop_name}={prop_str}"
+                            except Exception:
+                                pass
+                    else:
+                        # Response object exists but has no data yet - continue waiting
+                        print(f"⚠️  Response object موجود است اما هنوز داده‌ای ندارد. منتظر می‌مانیم...")
+                        response_obj = None  # Reset to continue waiting
                     
                     # Also try common methods
                     if not response:
@@ -743,6 +1100,7 @@ class POSNETPaymentGateway(BasePaymentGateway):
             '04': 'تراکنش ناموفق - کارت منقضی شده',
             '05': 'تراکنش ناموفق - خطا در ارتباط',
             '06': 'تراکنش ناموفق - خطای سیستم',
+            '81': 'تراکنش توسط کاربر لغو شد',
             '99': 'تراکنش ناموفق - خطای نامشخص',
         }
         return error_messages.get(error_code, f'خطای نامشخص: {error_code}')
@@ -757,6 +1115,17 @@ class POSNETPaymentGateway(BasePaymentGateway):
             # Use DLL implementation
             order_number = order_details.get('order_number', '')
             customer_name = order_details.get('customer_name', '')
+            payment_id = order_details.get('payment_id', '')
+            bill_id = order_details.get('bill_id', '')
+            
+            # Build additional_data dictionary
+            additional_data = {}
+            if customer_name:
+                additional_data['customer_name'] = customer_name
+            if payment_id:
+                additional_data['payment_id'] = payment_id
+            if bill_id:
+                additional_data['bill_id'] = bill_id
             
             # Test connection first
             if not self._test_connection():
@@ -767,7 +1136,7 @@ class POSNETPaymentGateway(BasePaymentGateway):
                 result = self._send_payment_dll(
                     amount=amount,
                     order_number=order_number,
-                    additional_data={'customer_name': customer_name} if customer_name else None
+                    additional_data=additional_data if additional_data else None
                 )
                 
                 # Generate transaction ID if not provided

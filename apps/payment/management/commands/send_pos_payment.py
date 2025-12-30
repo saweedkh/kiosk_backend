@@ -35,6 +35,18 @@ class Command(BaseCommand):
             help='نام مشتری (اختیاری)',
         )
         parser.add_argument(
+            '--payment-id',
+            type=str,
+            default='',
+            help='شناسه پرداخت (Payment ID) - حداکثر 11 کاراکتر (اختیاری)',
+        )
+        parser.add_argument(
+            '--bill-id',
+            type=str,
+            default='',
+            help='شناسه قبض (Bill ID) - حداکثر 20 کاراکتر (اختیاری)',
+        )
+        parser.add_argument(
             '--connection-type',
             type=str,
             choices=['tcp', 'serial'],
@@ -104,6 +116,10 @@ class Command(BaseCommand):
             self.stdout.write(f'  شماره سفارش: {options["order_number"]}')
         if options.get('customer_name'):
             self.stdout.write(f'  نام مشتری: {options["customer_name"]}')
+        if options.get('payment_id'):
+            self.stdout.write(f'  شناسه پرداخت: {options["payment_id"]}')
+        if options.get('bill_id'):
+            self.stdout.write(f'  شناسه قبض: {options["bill_id"]}')
         
         self.stdout.write('')
         
@@ -126,6 +142,8 @@ class Command(BaseCommand):
         order_details = {
             'order_number': options.get('order_number') or f'TEST-{os.urandom(4).hex().upper()}',
             'customer_name': options.get('customer_name', ''),
+            'payment_id': options.get('payment_id', ''),
+            'bill_id': options.get('bill_id', ''),
         }
         
         # Send payment
