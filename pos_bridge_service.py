@@ -281,9 +281,15 @@ def process_payment():
         print(f"✅ Transaction sent. Waiting for response...")
         
         # Wait for response (up to 120 seconds)
+        # IMPORTANT: Wait for actual response code (like '00'), not intermediate codes
         max_attempts = 120
         start_time = time.time()
         response_obj = None
+        last_resp_code = None  # Track last response code to detect changes
+        transaction_complete = False
+        
+        print(f"⏳ Waiting for transaction response...")
+        print(f"   Please insert card and enter PIN (or cancel on device)")
         
         for attempt in range(max_attempts):
             if attempt > 0:
@@ -293,56 +299,119 @@ def process_payment():
             if elapsed > 0 and elapsed % 10 == 0:
                 print(f"⏳ Waiting for response... ({elapsed}/{max_attempts} seconds)")
             
-            # Check for response
+            # Check pos_instance methods directly (more reliable)
             try:
-                if hasattr(pos_instance, 'Response') and pos_instance.Response is not None:
-                    response_obj = pos_instance.Response
-                    
-                    # Check for response code
-                    resp_code = None
-                    if hasattr(response_obj, 'GetTrxnResp'):
-                        resp_code = response_obj.GetTrxnResp()
-                        resp_code_str = str(resp_code).strip() if resp_code else ''
-                        if resp_code_str and resp_code_str != '=' and resp_code_str != 'None' and resp_code_str != '':
-                            print(f"✅ Response Code received: {resp_code_str}")
-                            break
-                    
-                    # Check for RRN
-                    if hasattr(response_obj, 'GetTrxnRRN'):
-                        rrn = response_obj.GetTrxnRRN()
-                        rrn_str = str(rrn).strip() if rrn else ''
-                        if rrn_str and rrn_str != '=' and rrn_str != 'None' and rrn_str != 'RN =' and len(rrn_str) > 2:
-                            if any(c.isdigit() for c in rrn_str):
-                                print(f"✅ RRN received: {rrn_str}")
-                                break
-            except Exception as e:
-                pass
-            
-            # Check pos_instance methods directly
-            try:
+                # Check for response code from pos_instance
                 if hasattr(pos_instance, 'GetTrxnResp'):
                     resp_code = pos_instance.GetTrxnResp()
                     resp_code_str = str(resp_code).strip() if resp_code else ''
+                    
+                    # Only accept valid response codes (not empty, not "=", not "None")
                     if resp_code_str and resp_code_str != '=' and resp_code_str != 'None' and resp_code_str != '':
-                        print(f"✅ Response Code from pos_instance: {resp_code_str}")
-                        if hasattr(pos_instance, 'Response'):
-                            response_obj = pos_instance.Response
-                        break
-            except Exception:
-                pass
-            
-            try:
-                if hasattr(pos_instance, 'GetTrxnRRN'):
+                        # Check if response code changed (new response received)
+                        if resp_code_str != last_resp_code:
+                            print(f"📋 Response Code detected: {resp_code_str}")
+                            last_resp_code = resp_code_str
+                            
+                            # IMPORTANT: Wait for '00' (success) or other final codes
+                            # Don't break on '81' immediately - it might be intermediate
+                            if resp_code_str == '00':
+                                print(f"✅ Success Response Code received: {resp_code_str}")
+                                if hasattr(pos_instance, 'Response'):
+                                    response_obj = pos_instance.Response
+                                transaction_complete = True
+                                break
+                            elif resp_code_str in ['01', '02', '03', '13']:
+                                # Other success codes
+                                print(f"✅ Response Code received: {resp_code_str}")
+                                if hasattr(pos_instance, 'Response'):
+                                    response_obj = pos_instance.Response
+                                transaction_complete = True
+                                break
+                            elif resp_code_str == '81':
+                                # '81' might be intermediate - wait a bit more to see if it changes to '00'
+                                print(f"⚠️  Response Code '81' detected - waiting to see if it changes...")
+                                # Wait a bit more (5 seconds) to see if response code changes
+                                for wait_attempt in range(5):
+                                    time.sleep(1)
+                                    new_resp_code = pos_instance.GetTrxnResp()
+                                    new_resp_code_str = str(new_resp_code).strip() if new_resp_code else ''
+                                    if new_resp_code_str == '00':
+                                        print(f"✅ Response Code changed to '00' - Success!")
+                                        if hasattr(pos_instance, 'Response'):
+                                            response_obj = pos_instance.Response
+                                        transaction_complete = True
+                                        break
+                                    elif new_resp_code_str and new_resp_code_str != '81' and new_resp_code_str != '=':
+                                        print(f"📋 Response Code changed to: {new_resp_code_str}")
+                                        last_resp_code = new_resp_code_str
+                                        if new_resp_code_str == '00':
+                                            transaction_complete = True
+                                            break
+                                if transaction_complete:
+                                    break
+                                # If still '81' after waiting, check for RRN
+                                # If RRN exists, transaction might be successful
+                                if hasattr(pos_instance, 'GetTrxnRRN'):
+                                    rrn = pos_instance.GetTrxnRRN()
+                                    rrn_str = str(rrn).strip() if rrn else ''
+                                    if rrn_str and rrn_str != '=' and rrn_str != 'None' and rrn_str != 'RN =' and len(rrn_str) > 2:
+                                        if any(c.isdigit() for c in rrn_str):
+                                            print(f"✅ RRN found with code '81' - transaction completed")
+                                            if hasattr(pos_instance, 'Response'):
+                                                response_obj = pos_instance.Response
+                                            transaction_complete = True
+                                            break
+                                # If no RRN and still '81', consider it cancelled
+                                print(f"❌ Response Code '81' without RRN - transaction cancelled")
+                                if hasattr(pos_instance, 'Response'):
+                                    response_obj = pos_instance.Response
+                                transaction_complete = True
+                                break
+                            else:
+                                # Other response codes - transaction complete
+                                print(f"📋 Response Code received: {resp_code_str}")
+                                if hasattr(pos_instance, 'Response'):
+                                    response_obj = pos_instance.Response
+                                transaction_complete = True
+                                break
+                
+                # Also check for RRN (if response code check didn't break)
+                if not transaction_complete and hasattr(pos_instance, 'GetTrxnRRN'):
                     rrn = pos_instance.GetTrxnRRN()
                     rrn_str = str(rrn).strip() if rrn else ''
-                    if rrn_str and rrn_str != 'None' and rrn_str != '' and rrn_str != '=' and len(rrn_str) > 2:
+                    if rrn_str and rrn_str != 'None' and rrn_str != '' and rrn_str != '=' and rrn_str != 'RN =' and len(rrn_str) > 2:
                         if any(c.isdigit() for c in rrn_str):
-                            print(f"✅ RRN from pos_instance: {rrn_str}")
+                            print(f"✅ RRN received: {rrn_str}")
                             if hasattr(pos_instance, 'Response'):
                                 response_obj = pos_instance.Response
+                            transaction_complete = True
                             break
-            except Exception:
+            except Exception as e:
+                # Continue waiting
                 pass
+            
+            # Also check Response object if available
+            if not transaction_complete:
+                try:
+                    if hasattr(pos_instance, 'Response') and pos_instance.Response is not None:
+                        response_obj = pos_instance.Response
+                        # Try to get response code from Response object
+                        if hasattr(response_obj, 'GetTrxnResp'):
+                            resp_code = response_obj.GetTrxnResp()
+                            resp_code_str = str(resp_code).strip() if resp_code else ''
+                            if resp_code_str == '00' and resp_code_str != last_resp_code:
+                                print(f"✅ Success Response Code from Response object: {resp_code_str}")
+                                transaction_complete = True
+                                break
+                except Exception:
+                    pass
+        
+        if not transaction_complete:
+            print(f"⚠️  Timeout waiting for response - checking final status...")
+            # Get final response even if timeout
+            if hasattr(pos_instance, 'Response') and pos_instance.Response is not None:
+                response_obj = pos_instance.Response
         
         # Parse response
         result = {
