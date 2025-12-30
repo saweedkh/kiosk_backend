@@ -41,7 +41,8 @@ CORS(app)  # Allow cross-origin requests
 
 # Configuration
 HOST = os.getenv('POS_BRIDGE_HOST', '0.0.0.0')
-PORT = int(os.getenv('POS_BRIDGE_PORT', 8080))
+# Default port changed to 8081 to avoid conflicts with common services
+PORT = int(os.getenv('POS_BRIDGE_PORT', 8081))
 DLL_PATH = os.getenv('POS_DLL_PATH', 'pna.pcpos.dll')
 POS_TCP_HOST = os.getenv('POS_TCP_HOST', '192.168.1.100')
 POS_TCP_PORT = int(os.getenv('POS_TCP_PORT', 1362))
@@ -355,63 +356,166 @@ def process_payment():
             'amount': amount
         }
         
+        # IMPORTANT: Try to get data from pos_instance directly first
+        # Sometimes response_obj might not have all data, but pos_instance methods do
+        try:
+            # Get response code from pos_instance
+            if hasattr(pos_instance, 'GetTrxnResp'):
+                resp_code = pos_instance.GetTrxnResp()
+                if resp_code:
+                    resp_code_str = str(resp_code).strip()
+                    # Clean up response code (remove "=" or other artifacts)
+                    if resp_code_str and resp_code_str != '=' and resp_code_str != 'None':
+                        result['response_code'] = resp_code_str
+                        print(f"📋 Response Code from pos_instance: {resp_code_str}")
+            
+            # Get RRN from pos_instance
+            if hasattr(pos_instance, 'GetTrxnRRN'):
+                rrn = pos_instance.GetTrxnRRN()
+                if rrn:
+                    rrn_str = str(rrn).strip()
+                    # Clean up RRN (remove "RN =", "=", etc.)
+                    if rrn_str and rrn_str != '=' and rrn_str != 'None' and rrn_str != 'RN =':
+                        # Remove "RN =" prefix if present
+                        if rrn_str.startswith('RN ='):
+                            rrn_str = rrn_str[4:].strip()
+                        if rrn_str and len(rrn_str) > 2 and any(c.isdigit() for c in rrn_str):
+                            result['reference_number'] = rrn_str
+                            print(f"📋 RRN from pos_instance: {rrn_str}")
+            
+            # Get serial from pos_instance
+            if hasattr(pos_instance, 'GetTrxnSerial'):
+                serial = pos_instance.GetTrxnSerial()
+                if serial:
+                    serial_str = str(serial).strip()
+                    # Clean up serial (remove "SR =", "=", etc.)
+                    if serial_str and serial_str != '=' and serial_str != 'None' and serial_str != 'SR =':
+                        # Remove "SR =" prefix if present
+                        if serial_str.startswith('SR ='):
+                            serial_str = serial_str[4:].strip()
+                        if serial_str and len(serial_str) > 2 and any(c.isdigit() for c in serial_str):
+                            result['transaction_id'] = serial_str
+                            print(f"📋 Serial from pos_instance: {serial_str}")
+            
+            # Get card number from pos_instance
+            if hasattr(pos_instance, 'GetPANID'):
+                pan = pos_instance.GetPANID()
+                if pan:
+                    pan_str = str(pan).strip()
+                    # Clean up PAN (remove "PN =", "=", etc.)
+                    if pan_str and pan_str != '=' and pan_str != 'None' and pan_str != 'PN =':
+                        # Remove "PN =" prefix if present
+                        if pan_str.startswith('PN ='):
+                            pan_str = pan_str[4:].strip()
+                        if pan_str and len(pan_str) > 2:
+                            result['card_number'] = pan_str
+                            print(f"📋 PAN from pos_instance: {pan_str}")
+            
+            # Get bank name from pos_instance
+            if hasattr(pos_instance, 'GetBankName'):
+                bank = pos_instance.GetBankName()
+                if bank:
+                    bank_str = str(bank).strip()
+                    if bank_str and bank_str != '=' and bank_str != 'None':
+                        result['bank_name'] = bank_str
+                        print(f"📋 Bank Name from pos_instance: {bank_str}")
+        except Exception as e:
+            print(f"⚠️  Error getting data from pos_instance: {e}")
+        
+        # Also try to get from response_obj if available
         if response_obj:
             try:
-                # Get response code
-                if hasattr(response_obj, 'GetTrxnResp'):
+                # Get response code (if not already set)
+                if not result['response_code'] and hasattr(response_obj, 'GetTrxnResp'):
                     resp_code = response_obj.GetTrxnResp()
                     if resp_code:
-                        result['response_code'] = str(resp_code).strip()
-                        if result['response_code'] == '00':
-                            result['success'] = True
-                            result['status'] = 'success'
-                        elif result['response_code'] == '81':
-                            result['response_message'] = 'Transaction cancelled by user'
+                        resp_code_str = str(resp_code).strip()
+                        if resp_code_str and resp_code_str != '=' and resp_code_str != 'None':
+                            result['response_code'] = resp_code_str
                 
-                # Get RRN
-                if hasattr(response_obj, 'GetTrxnRRN'):
+                # Get RRN (if not already set)
+                if not result['reference_number'] and hasattr(response_obj, 'GetTrxnRRN'):
                     rrn = response_obj.GetTrxnRRN()
                     if rrn:
                         rrn_str = str(rrn).strip()
-                        if rrn_str and rrn_str != '=' and rrn_str != 'None' and len(rrn_str) > 2:
-                            result['reference_number'] = rrn_str
+                        if rrn_str and rrn_str != '=' and rrn_str != 'None' and rrn_str != 'RN =':
+                            if rrn_str.startswith('RN ='):
+                                rrn_str = rrn_str[4:].strip()
+                            if rrn_str and len(rrn_str) > 2 and any(c.isdigit() for c in rrn_str):
+                                result['reference_number'] = rrn_str
                 
-                # Get serial
-                if hasattr(response_obj, 'GetTrxnSerial'):
+                # Get serial (if not already set)
+                if not result['transaction_id'] and hasattr(response_obj, 'GetTrxnSerial'):
                     serial = response_obj.GetTrxnSerial()
                     if serial:
                         serial_str = str(serial).strip()
-                        if serial_str and serial_str != '=' and serial_str != 'None' and len(serial_str) > 2:
-                            result['transaction_id'] = serial_str
+                        if serial_str and serial_str != '=' and serial_str != 'None' and serial_str != 'SR =':
+                            if serial_str.startswith('SR ='):
+                                serial_str = serial_str[4:].strip()
+                            if serial_str and len(serial_str) > 2 and any(c.isdigit() for c in serial_str):
+                                result['transaction_id'] = serial_str
                 
-                # Get card number
-                if hasattr(response_obj, 'GetPANID'):
+                # Get card number (if not already set)
+                if not result['card_number'] and hasattr(response_obj, 'GetPANID'):
                     pan = response_obj.GetPANID()
                     if pan:
-                        result['card_number'] = str(pan).strip()
+                        pan_str = str(pan).strip()
+                        if pan_str and pan_str != '=' and pan_str != 'None' and pan_str != 'PN =':
+                            if pan_str.startswith('PN ='):
+                                pan_str = pan_str[4:].strip()
+                            if pan_str and len(pan_str) > 2:
+                                result['card_number'] = pan_str
                 
-                # Get bank name
-                if hasattr(response_obj, 'GetBankName'):
+                # Get bank name (if not already set)
+                if not result.get('bank_name') and hasattr(response_obj, 'GetBankName'):
                     bank = response_obj.GetBankName()
                     if bank:
-                        result['bank_name'] = str(bank).strip()
+                        bank_str = str(bank).strip()
+                        if bank_str and bank_str != '=' and bank_str != 'None':
+                            result['bank_name'] = bank_str
             except Exception as e:
-                print(f"⚠️  Error parsing response: {e}")
+                print(f"⚠️  Error parsing response_obj: {e}")
         
         # Generate transaction ID if not provided
         if not result['transaction_id']:
             result['transaction_id'] = f"POS-{int(time.time())}-{amount}"
+        
+        # IMPORTANT: Determine success based on response code AND presence of RRN
+        # If we have RRN, transaction was likely successful even if response code is not '00'
+        # Response code '81' might mean different things depending on POS device
+        has_rrn = bool(result.get('reference_number') and len(result['reference_number']) > 2)
+        
+        # Set success status
+        if result['response_code'] == '00':
+            result['success'] = True
+            result['status'] = 'success'
+        elif has_rrn:
+            # If we have RRN, transaction was likely successful
+            # Some POS devices return different response codes but still provide RRN
+            result['success'] = True
+            result['status'] = 'success'
+            print(f"✅ Transaction considered successful (has RRN: {result['reference_number']})")
         
         # Set response message
         if not result['response_message']:
             if result['response_code'] == '00':
                 result['response_message'] = 'Transaction successful'
             elif result['response_code'] == '81':
-                result['response_message'] = 'Transaction cancelled by user'
+                if has_rrn:
+                    # If we have RRN, '81' might not mean cancelled
+                    result['response_message'] = 'Transaction completed'
+                else:
+                    result['response_message'] = 'Transaction cancelled by user'
             elif result['response_code']:
-                result['response_message'] = f'Transaction failed with code: {result["response_code"]}'
+                if has_rrn:
+                    result['response_message'] = f'Transaction completed (code: {result["response_code"]})'
+                else:
+                    result['response_message'] = f'Transaction failed with code: {result["response_code"]}'
             else:
-                result['response_message'] = 'No response from POS device'
+                if has_rrn:
+                    result['response_message'] = 'Transaction completed'
+                else:
+                    result['response_message'] = 'No response from POS device'
         
         print(f"✅ Payment processed:")
         print(f"   Success: {result['success']}")

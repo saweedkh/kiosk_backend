@@ -131,8 +131,35 @@ class POSBridgeGateway(BasePaymentGateway):
             print(f"   Amount: {amount:,} Rial")
             print(f"   Order Number: {order_number}")
             
+            # Test connection first
+            print(f"🔍 Testing connection to bridge service...")
+            try:
+                health_url = f"{self.bridge_url}/health"
+                health_response = requests.get(health_url, timeout=5)
+                if health_response.status_code == 200:
+                    print(f"✅ Bridge service is reachable")
+                else:
+                    print(f"⚠️  Bridge service returned status {health_response.status_code}")
+            except requests.exceptions.ConnectionError:
+                print(f"❌ Cannot connect to bridge service at {self.bridge_url}")
+                print(f"\n💡 Troubleshooting:")
+                print(f"   1. Make sure bridge service is running on Windows:")
+                print(f"      python pos_bridge_service.py")
+                print(f"   2. Check IP and Port:")
+                print(f"      Current: {self.bridge_host}:{self.bridge_port}")
+                print(f"   3. Test from Mac:")
+                print(f"      curl http://{self.bridge_host}:{self.bridge_port}/health")
+                print(f"   4. Check Windows Firewall settings")
+                raise GatewayException(
+                    f'Cannot connect to bridge service at {self.bridge_url}. '
+                    'Make sure the bridge service is running on Windows machine.'
+                )
+            except Exception as e:
+                print(f"⚠️  Health check failed: {e}")
+            
             # Send payment request to bridge service
             payment_url = f"{self.bridge_url}/payment"
+            print(f"📤 Sending payment request...")
             response = requests.post(
                 payment_url,
                 json=payload,
@@ -159,7 +186,33 @@ class POSBridgeGateway(BasePaymentGateway):
                 error_msg = error_data.get('error', f'Bridge service returned {response.status_code}')
                 raise GatewayException(f'Payment failed: {error_msg}')
                 
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.ConnectionError as e:
+            error_msg = (
+                f'❌ Cannot connect to bridge service at {self.bridge_url}\n'
+                f'\n💡 Troubleshooting steps:\n'
+                f'   1. Check if bridge service is running on Windows:\n'
+                f'      - Go to Windows machine\n'
+                f'      - Run: python pos_bridge_service.py\n'
+                f'      - You should see: "Starting server on 0.0.0.0:PORT"\n'
+                f'\n'
+                f'   2. Verify IP and Port:\n'
+                f'      - Current settings: {self.bridge_host}:{self.bridge_port}\n'
+                f'      - Check Windows IP: ipconfig (look for IPv4 Address)\n'
+                f'      - Make sure port matches in .env\n'
+                f'\n'
+                f'   3. Test connection from Mac:\n'
+                f'      curl http://{self.bridge_host}:{self.bridge_port}/health\n'
+                f'      Should return: {{"status": "ok"}}\n'
+                f'\n'
+                f'   4. Check Windows Firewall:\n'
+                f'      - Windows Security > Firewall\n'
+                f'      - Add exception for port {self.bridge_port}\n'
+                f'\n'
+                f'   5. Check network connectivity:\n'
+                f'      ping {self.bridge_host}\n'
+                f'      Should get replies from Windows machine\n'
+            )
+            print(error_msg)
             raise GatewayException(
                 f'Cannot connect to bridge service at {self.bridge_url}. '
                 'Make sure the bridge service is running on Windows machine.'
