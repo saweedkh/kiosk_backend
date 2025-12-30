@@ -4,6 +4,7 @@ from .base import BasePaymentGateway
 from .mock import MockPaymentGateway
 from .pos import POSPaymentGateway
 from .pos_dll_net import POSNETPaymentGateway
+from .pos_bridge import POSBridgeGateway
 from .exceptions import GatewayException
 
 
@@ -14,17 +15,20 @@ class PaymentGatewayAdapter:
         config = settings.PAYMENT_GATEWAY_CONFIG
         gateway_name = config.get('gateway_name', 'mock')
         use_dll = config.get('pos_use_dll', False)
+        use_bridge = config.get('pos_use_bridge', False)
         
         if gateway_name == 'mock':
             return MockPaymentGateway(config)
         elif gateway_name == 'pos':
             # Smart gateway selection:
-            # 1. If use_dll=True and DLL is available, use DLL (Windows/Mono)
-            # 2. Otherwise, use direct protocol (pos.py) - works on ALL platforms
-            # 
-            # Recommendation: Use direct protocol (pos.py) for cross-platform support
-            # It works on Windows, Mac, Linux without any DLL dependencies
-            if use_dll:
+            # 1. If use_bridge=True, use bridge service (connects to Windows service)
+            # 2. If use_dll=True and DLL is available, use DLL (Windows/Mono)
+            # 3. Otherwise, use direct protocol (pos.py) - works on ALL platforms
+            if use_bridge:
+                # Use bridge service - connects to Windows service via HTTP
+                # This is the recommended approach for cross-platform support
+                return POSBridgeGateway(config)
+            elif use_dll:
                 # Try DLL first, but it will automatically fallback to pos.py if DLL fails
                 return POSNETPaymentGateway(config)
             else:

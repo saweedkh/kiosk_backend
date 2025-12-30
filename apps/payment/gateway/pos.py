@@ -1,8 +1,11 @@
 """
-POS Card Reader Gateway for Pardakht Novin.
+POS Card Reader Gateway for Pardakht Novin (Direct Protocol).
 
-This module implements the communication protocol with POS card readers
-as described in the technical documentation.
+This module implements direct communication protocol with POS card readers
+without using DLL. It uses TCP/IP socket connection.
+
+Based on the DLL analysis, the protocol uses tag-based format:
+PR{type}AM{amount}TE{terminal}ME{merchant}SO{order}CU{customer}PD{payment_id}BI{bill_id}
 """
 import socket
 import time
@@ -21,24 +24,28 @@ except ImportError:
 
 class POSPaymentGateway(BasePaymentGateway):
     """
-    Payment Gateway for POS Card Reader (Pardakht Novin).
+    Payment Gateway for POS Card Reader (Pardakht Novin) - Direct Protocol.
     
-    Supports both Serial Port (COM/USB) and TCP/IP connections.
+    This implementation uses direct TCP/IP socket communication without DLL.
+    Based on the DLL protocol analysis, it uses tag-based message format.
+    
+    Supports:
+    - TCP/IP connection (socket)
+    - Tag-based message format (same as DLL)
+    - Payment ID and Bill ID support
+    - Connection keep-alive during transaction
     """
     
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        # Force TCP/IP connection, not serial
+        # Force TCP/IP connection
         connection_type = self.config.get('connection_type', 'tcp')
         if connection_type == 'serial':
-            # Override to TCP/IP if serial is requested
             connection_type = 'tcp'
             import warnings
             warnings.warn('Serial connection requested but using TCP/IP instead. Set POS_CONNECTION_TYPE=tcp in .env')
         
-        self.connection_type = connection_type  # Always 'tcp' for socket connection
-        self.serial_port = self.config.get('serial_port', 'COM1')
-        self.serial_baudrate = self.config.get('serial_baudrate', 9600)
+        self.connection_type = 'tcp'  # Always TCP/IP for socket connection
         self.tcp_host = self.config.get('tcp_host', '192.168.1.100')
         self.tcp_port = self.config.get('tcp_port', 1362)
         self.timeout = self.config.get('timeout', 30)
@@ -48,64 +55,38 @@ class POSPaymentGateway(BasePaymentGateway):
         self._connection = None
     
     def _connect(self):
-        """Establish connection to POS device."""
+        """Establish TCP/IP connection to POS device."""
         # If already connected, reuse the connection
         if self._connection:
             try:
                 # Check if connection is still alive
-                if self.connection_type == 'tcp':
-                    # For TCP, try to get socket info to check if alive
-                    try:
-                        self._connection.getpeername()
-                        # Connection is alive, reuse it
-                        return
-                    except (OSError, socket.error):
-                        # Connection is dead, reconnect
-                        self._connection = None
-                elif self.connection_type == 'serial':
-                    if self._connection.is_open:
-                        # Connection is alive, reuse it
-                        return
-                    else:
-                        # Connection is closed, reconnect
-                        self._connection = None
+                try:
+                    self._connection.getpeername()
+                    # Connection is alive, reuse it
+                    return
+                except (OSError, socket.error):
+                    # Connection is dead, reconnect
+                    self._connection = None
             except Exception:
                 # Connection check failed, reconnect
                 self._connection = None
         
-        if self.connection_type == 'serial':
-            if not SERIAL_AVAILABLE:
-                raise GatewayException('pyserial is not installed. Install it with: pip install pyserial')
-            try:
-                self._connection = serial.Serial(
-                    port=self.serial_port,
-                    baudrate=self.serial_baudrate,
-                    timeout=self.timeout
-                )
-            except Exception as e:
-                raise GatewayException(f'Failed to connect to POS via serial: {str(e)}')
-        elif self.connection_type == 'tcp':
-            try:
-                self._connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # Set socket options to keep connection alive
-                self._connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                # Connect without timeout first
-                self._connection.settimeout(None)  # No timeout for connection
-                self._connection.connect((self.tcp_host, self.tcp_port))
-                print(f"✅ اتصال TCP/IP برقرار شد: {self.tcp_host}:{self.tcp_port}")
-            except Exception as e:
-                raise GatewayException(f'Failed to connect to POS via TCP: {str(e)}')
-        else:
-            raise GatewayException(f'Unknown connection type: {self.connection_type}')
+        try:
+            self._connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Set socket options to keep connection alive
+            self._connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            # Set timeout for connection (but keep it long for transaction waiting)
+            self._connection.settimeout(30)  # 30 seconds for initial connection
+            self._connection.connect((self.tcp_host, self.tcp_port))
+            print(f"✅ اتصال TCP/IP برقرار شد: {self.tcp_host}:{self.tcp_port}")
+        except Exception as e:
+            raise GatewayException(f'Failed to connect to POS via TCP: {str(e)}')
     
     def _disconnect(self):
         """Close connection to POS device."""
         if self._connection:
             try:
-                if self.connection_type == 'serial':
-                    self._connection.close()
-                elif self.connection_type == 'tcp':
-                    self._connection.close()
+                self._connection.close()
             except Exception:
                 pass
             finally:
@@ -133,11 +114,7 @@ class POSPaymentGateway(BasePaymentGateway):
             # Try to connect
             self._connect()
             
-            # If connection successful, try a simple ping/test command
-            # For TCP, just connecting is enough to test
-            # For Serial, we can try to read/write
-            
-            if self.connection_type == 'tcp':
+            if self._connection:
                 result['success'] = True
                 result['message'] = f'اتصال TCP/IP موفق بود (IP: {self.tcp_host}, Port: {self.tcp_port})'
                 result['details'] = {
@@ -145,18 +122,6 @@ class POSPaymentGateway(BasePaymentGateway):
                     'port': self.tcp_port,
                     'timeout': self.timeout
                 }
-            elif self.connection_type == 'serial':
-                # For serial, try to read port status
-                if self._connection and self._connection.is_open:
-                    result['success'] = True
-                    result['message'] = f'اتصال سریال موفق بود (Port: {self.serial_port}, Baudrate: {self.serial_baudrate})'
-                    result['details'] = {
-                        'port': self.serial_port,
-                        'baudrate': self.serial_baudrate,
-                        'timeout': self.timeout
-                    }
-                else:
-                    result['message'] = f'اتصال سریال ناموفق بود (Port: {self.serial_port})'
             
             # Disconnect after test
             self._disconnect()
@@ -173,152 +138,21 @@ class POSPaymentGateway(BasePaymentGateway):
         
         return result
     
-    def _send_command(self, command, wait_for_response: bool = True, max_wait_time: int = 120) -> str:
+    def _build_payment_request(self, amount: int, order_number: str, 
+                               additional_data: Dict[str, Any] = None) -> bytes:
         """
-        Send command to POS device and receive response.
+        Build payment request using tag-based format (same as DLL).
         
-        Args:
-            command: Command string to send
-            wait_for_response: Whether to wait for response (for async transactions)
-            max_wait_time: Maximum time to wait for response in seconds
-            
-        Returns:
-            str: Response from POS device
-            
-        Raises:
-            GatewayException: If communication fails
-        """
-        if not self._connection:
-            self._connect()
-        
-        try:
-            # Convert command to bytes if it's a string
-            if isinstance(command, str):
-                command_bytes = command.encode('utf-8')
-            else:
-                command_bytes = command
-            
-            # Debug: Log what we're sending
-            try:
-                command_str = command_bytes.decode('utf-8', errors='replace')[:100]
-                print(f"📤 ارسال درخواست ({len(command_bytes)} bytes): {command_str}...")
-            except:
-                print(f"📤 ارسال درخواست ({len(command_bytes)} bytes): {command_bytes[:50]}...")
-            
-            # Send command
-            if self.connection_type == 'serial':
-                self._connection.write(command_bytes)
-                # Wait a bit for response
-                time.sleep(0.5)
-                response = self._connection.read(1024).decode('utf-8', errors='replace')
-            else:  # TCP
-                # IMPORTANT: Keep connection alive - don't close it!
-                # Send command
-                self._connection.sendall(command_bytes)
-                
-                # Small delay to ensure data is sent
-                time.sleep(0.1)
-                
-                if not wait_for_response:
-                    # For commands that don't need response
-                    return ''
-                
-                # Wait for response - POS devices may take time to respond
-                # Especially for payment transactions that require user interaction
-                # IMPORTANT: Keep connection open and wait for response
-                response = ''
-                start_time = time.time()
-                
-                # Set socket to non-blocking mode for checking, but use timeout for actual reads
-                # This allows us to keep connection alive while waiting
-                self._connection.settimeout(1)  # 1 second timeout per read attempt
-                
-                # First, try to get immediate response (acknowledgment)
-                try:
-                    # Some POS devices send immediate ACK
-                    chunk = self._connection.recv(4096)
-                    if chunk:
-                        response += chunk.decode('utf-8', errors='ignore')
-                        print(f"📥 دریافت پاسخ اولیه: {response[:100]}...")
-                except socket.timeout:
-                    # No immediate response, that's OK - device might be waiting for user
-                    # Connection is still alive, continue waiting
-                    pass
-                except Exception as e:
-                    print(f"⚠️  خطا در دریافت پاسخ اولیه: {e}")
-                    # Don't disconnect - connection might still be valid
-                
-                # Now wait for actual transaction response (user interaction required)
-                # Keep connection alive and check periodically
-                
-                while time.time() - start_time < max_wait_time:
-                    try:
-                        # Try to receive data
-                        chunk = self._connection.recv(4096)
-                        if chunk:
-                            chunk_str = chunk.decode('utf-8', errors='ignore')
-                            response += chunk_str
-                            print(f"📥 دریافت داده: {chunk_str[:100]}...")
-                            
-                            # If we got some data, wait a bit more to see if more is coming
-                            time.sleep(0.5)
-                            # Try to get more data if available
-                            self._connection.settimeout(1)
-                            try:
-                                while True:
-                                    more_chunk = self._connection.recv(4096)
-                                    if not more_chunk:
-                                        break
-                                    more_str = more_chunk.decode('utf-8', errors='ignore')
-                                    response += more_str
-                                    print(f"📥 دریافت داده بیشتر: {more_str[:100]}...")
-                            except socket.timeout:
-                                # No more data, we're done
-                                break
-                            
-                            # If we have a complete response, break
-                            if response and len(response) > 10:  # At least some meaningful response
-                                break
-                        else:
-                            # No data yet, wait a bit
-                            time.sleep(1)
-                    except socket.timeout:
-                        # No response yet, continue waiting
-                        elapsed = int(time.time() - start_time)
-                        if elapsed % 10 == 0 and elapsed > 0:  # Print every 10 seconds
-                            print(f"⏳ منتظر پاسخ... ({elapsed}/{max_wait_time} ثانیه)")
-                        continue
-                    except Exception as e:
-                        # Connection error
-                        print(f"⚠️  خطا در دریافت پاسخ: {e}")
-                        break
-                
-                if not response:
-                    print(f"⚠️  هیچ پاسخی دریافت نشد بعد از {int(time.time() - start_time)} ثانیه")
-                else:
-                    print(f"📥 دریافت پاسخ کامل ({len(response)} chars): {response[:200]}...")
-            
-            return response
-        except GatewayException:
-            # Re-raise GatewayException as is
-            raise
-        except Exception as e:
-            # Only disconnect on critical errors, not on timeout
-            # Connection might still be valid for retry
-            print(f"⚠️  خطا در ارتباط: {e}")
-            # Don't disconnect immediately - connection might still be valid
-            # self._disconnect()
-            raise GatewayException(f'Failed to communicate with POS: {str(e)}')
-    
-    def _build_payment_request_exact(self, amount: int, order_number: str, 
-                                     additional_data: Dict[str, Any] = None) -> bytes:
-        """
-        Build payment request EXACTLY as DLL does - based on DLL tag analysis.
-        
-        DLL uses tag-based format: PR{type}AM{amount}TE{terminal}ME{merchant}SO{order}...
+        Format: PR{type}AM{amount}TE{terminal}ME{merchant}SO{order}CU{customer}PD{payment_id}BI{bill_id}
         No separators between tags, just concatenated.
         
-        This is the EXACT format DLL uses based on DLL_INFO.md analysis.
+        Args:
+            amount: Payment amount in Rial
+            order_number: Order number
+            additional_data: Additional data (customer_name, payment_id, bill_id)
+            
+        Returns:
+            bytes: Formatted request bytes (ready to send)
         """
         parts = []
         
@@ -356,167 +190,245 @@ class POSPaymentGateway(BasePaymentGateway):
         
         # BI - Bill ID (20 digits/chars, zero-padded)
         if additional_data and 'bill_id' in additional_data:
-            bill_id = str(additional_data['bill_id'])[:20].zfill(20)
+            bill_id = str(additional_data['bill_id']).strip()
+            # Remove 'BI' prefix if user accidentally included it
+            if bill_id.startswith('BI'):
+                bill_id = bill_id[2:].strip()
+            # Limit to 20 chars and zero-pad to 20
+            bill_id = bill_id[:20].zfill(20)
             parts.append(f"BI{bill_id}")
         
         # Join all parts (NO separator - this is key!)
         message = "".join(parts)
         
+        # Debug: Print the message we're building
+        print(f"🔧 ساخت پیام: {message}")
+        print(f"   طول پیام: {len(message)} کاراکتر")
+        print(f"   تعداد تگ‌ها: {len(parts)}")
+        
         # Convert to ASCII bytes (POS devices use ASCII, not UTF-8)
-        return message.encode('ascii')
-    
-    def _build_payment_request(self, amount: int, order_number: str, 
-                              additional_data: Dict[str, Any] = None) -> bytes:
-        """
-        Build payment request according to POS protocol.
+        message_bytes = message.encode('ascii')
         
-        Based on DLL analysis (DLL_INFO.md), DLL uses tag-based format:
-        PR{type}AM{amount}TE{terminal}ME{merchant}SO{order}...
-        
-        This is the EXACT format - no separators, just concatenated tags.
-        
-        Args:
-            amount: Payment amount in Rial
-            order_number: Order number
-            additional_data: Additional data for payment
-            
-        Returns:
-            bytes: Formatted request bytes (ready to send)
-        """
+        # IMPORTANT: DLL sends message WITHOUT any terminator
+        # The message is sent as-is, no CRLF, no NULL, no length prefix
+        # This is the exact format DLL uses
         format_type = self.config.get('pos_message_format', 'dll_exact')
         
         if format_type == 'dll_exact':
-            # Use EXACT DLL format (based on DLL tag analysis)
-            return self._build_payment_request_exact(amount, order_number, additional_data)
-        
-        elif format_type == 'iso8583_like':
-            # Try ISO 8583-like format (common in POS devices)
-            # Format: STX + Message + ETX + LRC
-            # Message format: MTI (4) + Bitmap + Fields
-            # For simplicity, let's try a simpler format first
-            
-            # Format amount: 12 digits, zero-padded
-            amount_str = str(amount).zfill(12)
-            
-            # Build message parts
-            request_parts = []
-            
-            # MTI (Message Type Indicator) - 0200 = Financial Transaction Request
-            request_parts.append("0200")
-            
-            # Bitmap (simplified - just indicate which fields are present)
-            # For now, use a simple bitmap
-            bitmap = "E000000000000000"  # Simplified bitmap
-            request_parts.append(bitmap)
-            
-            # Field 4: Amount (12 digits)
-            request_parts.append(amount_str)
-            
-            # Field 11: System Trace Audit Number (6 digits) - use timestamp
-            import time
-            trace_num = str(int(time.time()) % 1000000).zfill(6)
-            request_parts.append(trace_num)
-            
-            # Field 41: Terminal ID (8 chars)
-            if self.terminal_id:
-                terminal_id_str = str(self.terminal_id).zfill(8)
-                request_parts.append(terminal_id_str)
-            
-            # Field 42: Merchant ID (15 chars)
-            if self.merchant_id:
-                merchant_id_str = str(self.merchant_id).zfill(15)
-                request_parts.append(merchant_id_str)
-            
-            # Join with field separators (usually \x1C or |)
-            message = "\x1C".join(request_parts)
-            
+            # Exact DLL format - no terminator, no framing, just raw message
+            # This is what DLL sends
+            pass  # Don't modify message_bytes
+        elif format_type == 'with_length':
+            # Add length prefix (4 digits, zero-padded) - some devices might need this
+            length = len(message_bytes)
+            length_prefix = f"{length:04d}".encode('ascii')
+            message_bytes = length_prefix + message_bytes
+            print(f"   ✅ اضافه کردن Length prefix: {length}")
+        elif format_type == 'with_stx_etx':
             # Add STX (0x02) at start and ETX (0x03) at end
-            request_bytes = b'\x02' + message.encode('ascii') + b'\x03'
-            
-        elif format_type == 'simple_tlv':
-            # Try simple TLV format
-            import struct
-            
-            # Format amount: 12 digits, zero-padded
-            amount_str = str(amount).zfill(12)
-            
-            tlv_parts = []
-            
-            # Tag: Amount (0x01), Length: 12, Value: amount
-            tlv_parts.append(b'\x01')
-            tlv_parts.append(struct.pack('B', 12))
-            tlv_parts.append(amount_str.encode('ascii'))
-            
-            # Tag: Terminal ID (0x02), Length: 8, Value: terminal_id
-            if self.terminal_id:
-                terminal_id_str = str(self.terminal_id).zfill(8)
-                tlv_parts.append(b'\x02')
-                tlv_parts.append(struct.pack('B', 8))
-                tlv_parts.append(terminal_id_str.encode('ascii'))
-            
-            # Tag: Merchant ID (0x03), Length: 15, Value: merchant_id
-            if self.merchant_id:
-                merchant_id_str = str(self.merchant_id).zfill(15)
-                tlv_parts.append(b'\x03')
-                tlv_parts.append(struct.pack('B', 15))
-                tlv_parts.append(merchant_id_str.encode('ascii'))
-            
-            request_bytes = b''.join(tlv_parts)
-            
-        else:  # 'simple' or 'with_terminator' - original format
-            # Format amount: 12 digits, zero-padded
-            amount_str = str(amount).zfill(12)
-            
-            # Original simple string format
-            request_parts = []
-            
-            # PR = Payment Request, AM = Amount
-            request_parts.append(f"PR00")  # Payment type: 00 = normal payment
-            request_parts.append(f"AM{amount_str}")  # Amount
-            
-            # Terminal ID (TE tag) - 8 digits
-            if self.terminal_id:
-                terminal_id_str = str(self.terminal_id).zfill(8)
-                request_parts.append(f"TE{terminal_id_str}")
-            
-            # Merchant ID (ME tag) - if needed, usually 15 digits
-            if self.merchant_id:
-                merchant_id_str = str(self.merchant_id).zfill(15)
-                request_parts.append(f"ME{merchant_id_str}")
-            
-            # Order number (SO tag - Sale Order) - up to 20 chars
-            if order_number:
-                order_num = order_number[:20] if len(order_number) > 20 else order_number
-                request_parts.append(f"SO{order_num.ljust(20)}")
-            
-            # Additional data
-            if additional_data:
-                # Customer name (CU tag) - up to 50 chars
-                if 'customer_name' in additional_data:
-                    customer_name = additional_data['customer_name'][:50]
-                    request_parts.append(f"CU{customer_name.ljust(50)}")
-            
-            # Join all parts
-            request_string = "".join(request_parts)
-            
-            # Convert to bytes
-            try:
-                request_bytes = request_string.encode('utf-8')
-            except:
-                request_bytes = request_string.encode('ascii', errors='ignore')
-            
-            # Add terminator if needed
-            if format_type == 'with_terminator':
-                request_bytes = request_bytes + b'\r\n'
+            message_bytes = b'\x02' + message_bytes + b'\x03'
+            print(f"   ✅ اضافه کردن STX/ETX framing")
+        elif format_type == 'with_terminator':
+            # Add CRLF terminator
+            message_bytes = message_bytes + b'\r\n'
+            print(f"   ✅ اضافه کردن CRLF terminator")
+        elif format_type == 'with_null':
+            # Add NULL terminator
+            message_bytes = message_bytes + b'\x00'
+            print(f"   ✅ اضافه کردن NULL terminator")
         
-        return request_bytes
+        print(f"   پیام نهایی ({len(message_bytes)} bytes): {message_bytes[:100]}...")
+        print(f"   Hex (اول 200 کاراکتر): {message_bytes.hex()[:200]}...")
+        
+        return message_bytes
+    
+    def _send_command(self, command: bytes, wait_for_response: bool = True, max_wait_time: int = 120) -> str:
+        """
+        Send command to POS device and receive response.
+        
+        IMPORTANT: Connection stays alive during the entire transaction.
+        The socket remains open until response is received or timeout.
+        
+        Args:
+            command: Command bytes to send
+            wait_for_response: Whether to wait for response
+            max_wait_time: Maximum time to wait for response in seconds
+            
+        Returns:
+            str: Response from POS device
+            
+        Raises:
+            GatewayException: If communication fails
+        """
+        if not self._connection:
+            self._connect()
+        
+        try:
+            # Debug: Log what we're sending
+            try:
+                command_str = command.decode('utf-8', errors='replace')
+                print(f"📤 ارسال درخواست ({len(command)} bytes): {command_str}")
+                print(f"   Hex: {command.hex()[:100]}...")
+            except:
+                print(f"📤 ارسال درخواست ({len(command)} bytes): {command[:50]}...")
+            
+            # IMPORTANT: Keep connection alive - don't close it!
+            # Send command
+            try:
+                bytes_sent = self._connection.sendall(command)
+                print(f"✅ داده ارسال شد ({len(command)} bytes)")
+                
+                # Verify data was sent by checking socket state
+                try:
+                    # Try to get socket info to verify it's still connected
+                    peer = self._connection.getpeername()
+                    print(f"✅ اتصال فعال است: {peer[0]}:{peer[1]}")
+                except Exception as e:
+                    print(f"⚠️  خطا در بررسی اتصال: {e}")
+                
+            except socket.error as e:
+                print(f"❌ خطا در ارسال داده: {e}")
+                raise GatewayException(f'Failed to send data to POS: {str(e)}')
+            
+            # Small delay to ensure data is sent and device processes it
+            time.sleep(0.5)  # Increased delay to give device time to process
+            
+            # IMPORTANT: Some POS devices send immediate ACK or response
+            # Check for immediate response (device might acknowledge or reject immediately)
+            try:
+                # Set very short timeout to check for immediate response
+                self._connection.settimeout(2)  # 2 seconds to check for immediate response
+                ack = self._connection.recv(4096)
+                if ack:
+                    ack_str = ack.decode('utf-8', errors='ignore')
+                    print(f"📥 دریافت پاسخ فوری از دستگاه: {ack_str[:100]}...")
+                    print(f"   Hex: {ack.hex()[:100]}...")
+                    # If we got a response, it might be the full response or an ACK
+                    # Check if it looks like a complete response
+                    if len(ack_str) > 5 and ('RS' in ack_str or 'OK' in ack_str or 'ACK' in ack_str):
+                        print(f"✅ پاسخ کامل دریافت شد!")
+                        return ack_str
+            except socket.timeout:
+                # No immediate response - that's OK, device might process and respond later
+                print("ℹ️  هیچ پاسخ فوری دریافت نشد (این طبیعی است - دستگاه در حال پردازش است)")
+            except Exception as e:
+                print(f"⚠️  خطا در دریافت پاسخ فوری: {e}")
+            finally:
+                # Reset timeout for main response waiting
+                self._connection.settimeout(1)
+            
+            if not wait_for_response:
+                # For commands that don't need response
+                return ''
+            
+            # Wait for response - POS devices may take time to respond
+            # Especially for payment transactions that require user interaction
+            # IMPORTANT: Keep connection open and wait for response
+            response = ''
+            start_time = time.time()
+            
+            # Set socket timeout for reading (1 second per read attempt)
+            # This allows us to keep connection alive while waiting
+            self._connection.settimeout(1)  # 1 second timeout per read attempt
+            
+            # First, try to get immediate response (acknowledgment)
+            try:
+                # Some POS devices send immediate ACK
+                chunk = self._connection.recv(4096)
+                if chunk:
+                    response += chunk.decode('utf-8', errors='ignore')
+                    print(f"📥 دریافت پاسخ اولیه: {response[:100]}...")
+            except socket.timeout:
+                # No immediate response, that's OK - device might be waiting for user
+                # Connection is still alive, continue waiting
+                pass
+            except Exception as e:
+                print(f"⚠️  خطا در دریافت پاسخ اولیه: {e}")
+                # Don't disconnect - connection might still be valid
+            
+            # Now wait for actual transaction response (user interaction required)
+            # Keep connection alive and check periodically
+            
+            while time.time() - start_time < max_wait_time:
+                try:
+                    # Try to receive data (with timeout to allow periodic checks)
+                    chunk = self._connection.recv(4096)
+                    if chunk:
+                        chunk_str = chunk.decode('utf-8', errors='ignore')
+                        response += chunk_str
+                        print(f"📥 دریافت داده: {chunk_str[:100]}...")
+                        
+                        # If we got some data, wait a bit more to see if more is coming
+                        time.sleep(0.5)
+                        # Try to get more data if available (keep connection open)
+                        self._connection.settimeout(1)
+                        try:
+                            while True:
+                                more_chunk = self._connection.recv(4096)
+                                if not more_chunk:
+                                    break
+                                more_str = more_chunk.decode('utf-8', errors='ignore')
+                                response += more_str
+                                print(f"📥 دریافت داده بیشتر: {more_str[:100]}...")
+                        except socket.timeout:
+                            # No more data, we're done
+                            # But connection is still open!
+                            break
+                        
+                        # If we have a complete response, break
+                        if response and len(response) > 10:  # At least some meaningful response
+                            print(f"✅ پاسخ کامل دریافت شد ({len(response)} chars)")
+                            break
+                    else:
+                        # No data yet, wait a bit but keep connection alive
+                        time.sleep(1)
+                except socket.timeout:
+                    # No response yet, continue waiting
+                    # IMPORTANT: Connection is still alive, just no data yet
+                    elapsed = int(time.time() - start_time)
+                    if elapsed % 10 == 0 and elapsed > 0:  # Print every 10 seconds
+                        print(f"⏳ منتظر پاسخ... ({elapsed}/{max_wait_time} ثانیه) - اتصال فعال است")
+                    # Check if connection is still alive
+                    try:
+                        self._connection.getpeername()  # This will raise if connection is dead
+                    except (OSError, socket.error):
+                        print(f"❌ اتصال قطع شد!")
+                        raise GatewayException('اتصال به دستگاه POS قطع شد')
+                    continue
+                except Exception as e:
+                    # Connection error - but try to keep connection if possible
+                    print(f"⚠️  خطا در دریافت پاسخ: {e}")
+                    # Check if connection is still alive
+                    try:
+                        self._connection.getpeername()
+                        # Connection is still alive, continue waiting
+                        continue
+                    except (OSError, socket.error):
+                        # Connection is dead, raise error
+                        raise GatewayException(f'اتصال به دستگاه POS قطع شد: {e}')
+            
+            if not response:
+                print(f"⚠️  هیچ پاسخی دریافت نشد بعد از {int(time.time() - start_time)} ثانیه")
+            else:
+                print(f"📥 دریافت پاسخ کامل ({len(response)} chars): {response[:200]}...")
+            
+            return response
+        except GatewayException:
+            # Re-raise GatewayException as is
+            raise
+        except Exception as e:
+            # Only disconnect on critical errors, not on timeout
+            # Connection might still be valid for retry
+            print(f"⚠️  خطا در ارتباط: {e}")
+            # Don't disconnect immediately - connection might still be valid
+            raise GatewayException(f'Failed to communicate with POS: {str(e)}')
     
     def _parse_response(self, response: str) -> Dict[str, Any]:
         """
         Parse response from POS device.
         
         Based on Pardakht Novin protocol:
-        Format: RS{response_code}SR{serial}RN{reference}TI{terminal}...
+        Format: RS{response_code}SR{serial}RN{reference}TI{terminal}PN{pan}...
         
         Args:
             response: Response string from POS
@@ -535,8 +447,6 @@ class POSPaymentGateway(BasePaymentGateway):
             'terminal_id': '',
             'raw_response': response
         }
-
-        print(response)
         
         if not response:
             return result
@@ -615,12 +525,14 @@ class POSPaymentGateway(BasePaymentGateway):
     def _get_error_message(self, error_code: str) -> str:
         """Get human-readable error message from error code."""
         error_messages = {
+            '00': 'تراکنش موفق',
             '01': 'تراکنش ناموفق - کارت نامعتبر',
             '02': 'تراکنش ناموفق - موجودی کافی نیست',
             '03': 'تراکنش ناموفق - رمز اشتباه',
             '04': 'تراکنش ناموفق - کارت منقضی شده',
             '05': 'تراکنش ناموفق - خطا در ارتباط',
             '06': 'تراکنش ناموفق - خطای سیستم',
+            '81': 'تراکنش توسط کاربر لغو شد',
             '99': 'تراکنش ناموفق - خطای نامشخص',
         }
         return error_messages.get(error_code, f'خطای نامشخص: {error_code}')
@@ -629,27 +541,67 @@ class POSPaymentGateway(BasePaymentGateway):
         """
         Initiate payment transaction with POS device.
         
+        This method follows the exact same flow as the DLL:
+        1. Test connection first (like DLL's TestConnection())
+        2. Build payment request message
+        3. Send transaction (like DLL's send_transaction())
+        4. Wait for response with connection alive
+        
         Args:
             amount: Payment amount in Rial
             order_details: Dictionary containing order details
                 - order_number: Order number
                 - customer_name: Customer name (optional)
+                - payment_id: Payment ID (optional)
+                - bill_id: Bill ID (optional)
                 
         Returns:
             Dict[str, Any]: Gateway response containing transaction information
         """
         order_number = order_details.get('order_number', '')
         customer_name = order_details.get('customer_name', '')
+        payment_id = order_details.get('payment_id', '')
+        bill_id = order_details.get('bill_id', '')
         
-        # Build payment request (returns bytes)
+        # IMPORTANT: Follow DLL's exact flow
+        # Step 1: Test connection first (like DLL's TestConnection())
+        print("🔍 در حال تست اتصال به دستگاه POS...")
+        try:
+            connection_test = self.test_connection()
+            if not connection_test.get('success', False):
+                raise GatewayException('اتصال به دستگاه POS برقرار نشد. لطفاً IP و Port را بررسی کنید.')
+            print(f"✅ اتصال TCP/IP برقرار است: {self.tcp_host}:{self.tcp_port}")
+        except Exception as e:
+            print(f"⚠️  خطا در تست اتصال: {e}")
+            # Try to reconnect
+            try:
+                if self._connection:
+                    self._disconnect()
+                time.sleep(1)
+                self._connect()
+                print(f"✅ اتصال مجدد برقرار شد: {self.tcp_host}:{self.tcp_port}")
+            except Exception as reconnect_error:
+                raise GatewayException(f'اتصال به دستگاه POS برقرار نشد: {str(reconnect_error)}')
+        
+        # Step 2: Build additional_data dictionary (like DLL sets properties)
+        additional_data = {}
+        if customer_name:
+            additional_data['customer_name'] = customer_name
+        if payment_id:
+            additional_data['payment_id'] = payment_id
+        if bill_id:
+            additional_data['bill_id'] = bill_id
+        
+        # Step 3: Build payment request message (DLL builds this internally)
+        # We build it explicitly to match DLL's format
         request_bytes = self._build_payment_request(
             amount=amount,
             order_number=order_number,
-            additional_data={'customer_name': customer_name} if customer_name else None
+            additional_data=additional_data if additional_data else None
         )
         
         try:
-            # Send payment request to POS and wait for response
+            # Step 4: Send transaction (like DLL's send_transaction())
             # Payment transactions require user interaction (card swipe, PIN entry)
             # So we need to wait longer (up to 2 minutes)
             print("\n⚠️  توجه: مبلغ روی دستگاه نمایش داده می‌شود.")
@@ -659,9 +611,11 @@ class POSPaymentGateway(BasePaymentGateway):
             print("   3. یا در دستگاه لغو کنید")
             print(f"   (حداکثر 120 ثانیه منتظر می‌مانیم)\n")
             
+            # IMPORTANT: Keep connection alive during transaction (like DLL does)
+            # The socket must stay open to receive response
             response = self._send_command(request_bytes, wait_for_response=True, max_wait_time=120)
             
-            # Parse response
+            # Step 5: Parse response (like DLL's GetParsedResp())
             parsed_response = self._parse_response(response)
             
             # Generate transaction ID if not provided by POS
@@ -684,6 +638,7 @@ class POSPaymentGateway(BasePaymentGateway):
             raise GatewayException(f'Failed to initiate payment: {str(e)}')
         finally:
             # Don't disconnect immediately - keep connection for potential retries
+            # This matches DLL behavior - connection stays alive
             # self._disconnect()
             pass
     
@@ -775,4 +730,3 @@ class POSPaymentGateway(BasePaymentGateway):
             'message': 'Webhook processed',
             'transaction_id': request_data.get('transaction_id', '')
         }
-

@@ -203,6 +203,10 @@ PAYMENT_GATEWAY_CONFIG = {
     # DLL Configuration (if using DLL)
     'pos_use_dll': os.getenv('POS_USE_DLL', 'False') == 'True',
     'dll_path': os.getenv('POS_DLL_PATH', ''),  # Path to DLL file (e.g., 'C:/path/to/pna.pcpos.dll')
+    # Bridge Service Configuration (if using Windows bridge service)
+    'pos_use_bridge': os.getenv('POS_USE_BRIDGE', 'False') == 'True',  # Use Windows bridge service
+    'pos_bridge_host': os.getenv('POS_BRIDGE_HOST', '192.168.1.50'),  # IP of Windows machine running bridge service
+    'pos_bridge_port': int(os.getenv('POS_BRIDGE_PORT', 8080)),  # Port of bridge service
 }
 
 SPECTACULAR_SETTINGS = {
