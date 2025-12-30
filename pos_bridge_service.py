@@ -429,6 +429,19 @@ if __name__ == '__main__':
     print(f"POS Device: {POS_TCP_HOST}:{POS_TCP_PORT}")
     print("=" * 60)
     
+    # Check if port is available
+    print(f"\n🔍 Checking if port {PORT} is available...")
+    if not check_port_available(PORT, HOST):
+        print(f"❌ Port {PORT} is already in use or not accessible!")
+        print(f"\n💡 Solutions:")
+        print(f"   1. Change port in .env: POS_BRIDGE_PORT=8081")
+        print(f"   2. Check what's using the port:")
+        print(f"      netstat -ano | findstr :{PORT}")
+        print(f"   3. Run as Administrator")
+        print(f"   4. Check Windows Firewall settings")
+        sys.exit(1)
+    print(f"✅ Port {PORT} is available")
+    
     # Initialize POS DLL
     if PYTHONNET_AVAILABLE:
         if not init_pos_dll():
@@ -444,10 +457,40 @@ if __name__ == '__main__':
     print(f"   POST /test-connection - Test POS connection")
     print(f"   POST /payment - Process payment")
     print(f"\n💡 Example request:")
-    print(f"   curl -X POST http://{HOST}:{PORT}/payment \\")
+    print(f"   curl -X POST http://localhost:{PORT}/payment \\")
     print(f"        -H 'Content-Type: application/json' \\")
     print(f"        -d '{{\"amount\": 10000, \"order_number\": \"TEST-001\"}}'")
     print("\n" + "=" * 60 + "\n")
     
-    app.run(host=HOST, port=PORT, debug=False)
+    try:
+        app.run(host=HOST, port=PORT, debug=False)
+    except OSError as e:
+        if "access a socket in a way forbidden" in str(e) or "permission" in str(e).lower():
+            print("\n" + "=" * 60)
+            print("❌ خطا: دسترسی به پورت رد شد!")
+            print("=" * 60)
+            print("\n🔧 راه‌حل‌های ممکن:")
+            print("\n1️⃣ تغییر پورت:")
+            print("   در .env یا environment variables:")
+            print("   POS_BRIDGE_PORT=8081  # یا هر پورت دیگری")
+            print("\n2️⃣ بررسی استفاده از پورت:")
+            print("   netstat -ano | findstr :8080")
+            print("   اگر پورت استفاده شده، سرویس را ببندید یا پورت را تغییر دهید")
+            print("\n3️⃣ اجرا به عنوان Administrator:")
+            print("   - راست کلیک روی Command Prompt")
+            print("   - انتخاب 'Run as administrator'")
+            print("   - سپس دوباره اجرا کنید")
+            print("\n4️⃣ غیرفعال کردن فایروال موقتاً (برای تست):")
+            print("   - Windows Security > Firewall")
+            print("   - یا در Command Prompt (as admin):")
+            print("     netsh advfirewall set allprofiles state off")
+            print("\n5️⃣ اضافه کردن exception در فایروال:")
+            print("   - Windows Security > Firewall > Advanced settings")
+            print("   - Inbound Rules > New Rule")
+            print("   - Port > TCP > Specific local ports: 8080")
+            print("   - Allow the connection")
+            print("\n" + "=" * 60)
+            sys.exit(1)
+        else:
+            raise
 
