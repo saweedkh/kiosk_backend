@@ -483,37 +483,64 @@ def process_payment():
         # IMPORTANT: Determine success based on response code AND presence of RRN
         # If we have RRN, transaction was likely successful even if response code is not '00'
         # Response code '81' might mean different things depending on POS device
+        # Some POS devices return '81' for successful transactions
         has_rrn = bool(result.get('reference_number') and len(result['reference_number']) > 2)
+        has_serial = bool(result.get('transaction_id') and len(result['transaction_id']) > 2 and result['transaction_id'] != f"POS-{int(time.time())}-{amount}")
+        
+        # Debug: Print what we have
+        print(f"\n📊 Response Analysis:")
+        print(f"   Response Code: {result.get('response_code', 'N/A')}")
+        print(f"   RRN: {result.get('reference_number', 'N/A')}")
+        print(f"   Serial: {result.get('transaction_id', 'N/A')}")
+        print(f"   Has RRN: {has_rrn}")
+        print(f"   Has Serial: {has_serial}")
         
         # Set success status
+        # Priority: RRN > Serial > Response Code
         if result['response_code'] == '00':
             result['success'] = True
             result['status'] = 'success'
+            print(f"✅ Transaction successful (Response Code: 00)")
         elif has_rrn:
             # If we have RRN, transaction was likely successful
             # Some POS devices return different response codes but still provide RRN
             result['success'] = True
             result['status'] = 'success'
             print(f"✅ Transaction considered successful (has RRN: {result['reference_number']})")
+            # IMPORTANT: If we have RRN, ignore response code '81' - it's likely a success
+            if result['response_code'] == '81':
+                print(f"⚠️  Response Code '81' ignored because RRN exists - transaction is successful")
+        elif has_serial:
+            # If we have Serial Number, transaction might be successful
+            result['success'] = True
+            result['status'] = 'success'
+            print(f"✅ Transaction considered successful (has Serial: {result['transaction_id']})")
+        elif result['response_code'] == '81':
+            # Response code '81' without RRN/Serial = likely cancelled
+            result['success'] = False
+            result['status'] = 'failed'
+            print(f"❌ Transaction failed (Response Code: 81, no RRN/Serial)")
         
         # Set response message
         if not result['response_message']:
-            if result['response_code'] == '00':
-                result['response_message'] = 'Transaction successful'
-            elif result['response_code'] == '81':
-                if has_rrn:
-                    # If we have RRN, '81' might not mean cancelled
+            if result['success']:
+                # Transaction is successful
+                if result['response_code'] == '00':
+                    result['response_message'] = 'Transaction successful'
+                elif has_rrn:
+                    # Success with RRN (even if response code is '81')
+                    result['response_message'] = f'Transaction successful (Reference: {result["reference_number"]})'
+                elif has_serial:
+                    # Success with Serial
+                    result['response_message'] = f'Transaction successful (Serial: {result["transaction_id"]})'
+                else:
                     result['response_message'] = 'Transaction completed'
-                else:
-                    result['response_message'] = 'Transaction cancelled by user'
-            elif result['response_code']:
-                if has_rrn:
-                    result['response_message'] = f'Transaction completed (code: {result["response_code"]})'
-                else:
-                    result['response_message'] = f'Transaction failed with code: {result["response_code"]}'
             else:
-                if has_rrn:
-                    result['response_message'] = 'Transaction completed'
+                # Transaction failed
+                if result['response_code'] == '81':
+                    result['response_message'] = 'Transaction cancelled by user'
+                elif result['response_code']:
+                    result['response_message'] = f'Transaction failed with code: {result["response_code"]}'
                 else:
                     result['response_message'] = 'No response from POS device'
         
