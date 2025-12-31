@@ -207,6 +207,10 @@ PAYMENT_GATEWAY_CONFIG = {
     'pos_use_bridge': os.getenv('POS_USE_BRIDGE', 'False') == 'True',  # Use Windows bridge service
     'pos_bridge_host': os.getenv('POS_BRIDGE_HOST', '192.168.1.50'),  # IP of Windows machine running bridge service
     'pos_bridge_port': int(os.getenv('POS_BRIDGE_PORT', 8080)),  # Port of bridge service
+    # Mock Gateway Configuration
+    'mock_payment_delay': float(os.getenv('MOCK_PAYMENT_DELAY', '3')),  # Delay in seconds for mock payment (default: 3 seconds)
+    'mock_payment_success': os.getenv('MOCK_PAYMENT_SUCCESS', 'True') == 'True',  # Whether mock payment should succeed (default: True)
+    'mock_payment_success_rate': float(os.getenv('MOCK_PAYMENT_SUCCESS_RATE', '100')),  # Success rate percentage (0-100, default: 100 = always success)
 }
 
 SPECTACULAR_SETTINGS = {
@@ -220,7 +224,6 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Categories', 'description': 'Category listing endpoints'},
         {'name': 'Orders', 'description': 'Order management endpoints'},
         {'name': 'Invoices', 'description': 'Invoice generation and download endpoints'},
-        {'name': 'Payment', 'description': 'Payment processing endpoints'},
         {'name': 'Transactions', 'description': 'Payment transaction endpoints'},
         {'name': 'Admin - Auth', 'description': 'Admin authentication endpoints'},
         {'name': 'Admin - Products', 'description': 'Admin product management endpoints'},
@@ -237,7 +240,6 @@ SPECTACULAR_SETTINGS = {
         'Categories',
         'Orders',
         'Invoices',
-        'Payment',
         'Transactions',
         'Admin - Auth',
         'Admin - Products',

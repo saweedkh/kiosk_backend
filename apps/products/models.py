@@ -39,10 +39,11 @@ class Product(TimeStampedModel):
     )
     category = models.ForeignKey(
         Category,
-        on_delete=models.SET_NULL,
-        null=True,
+        on_delete=models.PROTECT,
+        null=False,
         related_name='products',
-        verbose_name=_('دسته‌بندی')
+        verbose_name=_('دسته‌بندی'),
+        help_text=_('دسته‌بندی محصول اجباری است')
     )
     image = models.ImageField(
         upload_to='products/',

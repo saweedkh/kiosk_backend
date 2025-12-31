@@ -52,6 +52,12 @@ class AdminProductListAPIView(generics.ListCreateAPIView):
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
     
+    def get_serializer_context(self):
+        """Add request to serializer context for image URL building."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
     @custom_extend_schema(
         resource_name="AdminProductCreate",
         parameters=[AdminProductSerializer],

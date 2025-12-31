@@ -14,6 +14,12 @@ class ProductUpdateSerializerInput(serializers.Serializer):
 
 class AdminProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True, label=_('نام دسته‌بندی'))
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.filter(is_active=True),
+        required=True,
+        label=_('دسته‌بندی'),
+        help_text=_('دسته‌بندی محصول اجباری است')
+    )
     
     class Meta:
         model = Product
@@ -23,6 +29,12 @@ class AdminProductSerializer(serializers.ModelSerializer):
             'is_in_stock', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'is_in_stock', 'created_at', 'updated_at']
+    
+    def validate_category(self, value):
+        """Validate that category is active."""
+        if not value.is_active:
+            raise serializers.ValidationError(_('دسته‌بندی انتخاب شده غیرفعال است.'))
+        return value
     
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -37,15 +49,24 @@ class AdminProductSerializer(serializers.ModelSerializer):
 
 class AdminProductListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True, label=_('نام دسته‌بندی'))
+    image = serializers.SerializerMethodField()
     
     class Meta:
-        
         model = Product
         fields = [
-            'id', 'name', 'price', 'category_name', 'stock_quantity',
-            'is_active', 'is_in_stock'
+            'id', 'name', 'description', 'price', 'category_name', 'category',
+            'image', 'stock_quantity', 'is_active', 'is_in_stock'
         ]
         read_only_fields = ['id', 'is_in_stock']
+    
+    def get_image(self, obj):
+        """Get image URL."""
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
 
 
 class UpdateStockSerializer(serializers.Serializer):

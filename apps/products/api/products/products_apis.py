@@ -32,7 +32,14 @@ class ProductListAPIView(generics.ListAPIView):
         operation_id="products_list",
     )
     def get(self, request, *args, **kwargs):
+        # Pass request context to serializer for image URL building
         return super().get(request, *args, **kwargs)
+    
+    def get_serializer_context(self):
+        """Add request to serializer context for image URL building."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
     
     def get_queryset(self):
         """

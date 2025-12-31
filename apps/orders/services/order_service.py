@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 from django.db import transaction
 from django.utils import timezone
 from apps.orders.models import Order, OrderItem
@@ -8,6 +8,10 @@ from apps.products.services.stock_service import StockService
 from apps.logs.services.log_service import LogService
 from apps.core.exceptions.order import OrderNotFoundException
 from apps.core.exceptions.order import InsufficientStockException
+from apps.payment.gateway.adapter import PaymentGatewayAdapter
+from apps.payment.gateway.exceptions import GatewayException
+from apps.payment.models import Transaction
+from apps.payment.services.payment_service import PaymentService
 
 
 class OrderService:
@@ -34,24 +38,26 @@ class OrderService:
     
     @staticmethod
     @transaction.atomic
-    def create_order_from_items(session_key: str, items: List[Dict]) -> Order:
+    def create_order_from_items(session_key: str, items: List[Dict], process_payment: bool = True) -> Tuple[Order, Optional[Transaction]]:
         """
-        Create order from items data sent from frontend.
+        Create order from items data sent from frontend and process payment directly.
         
-        This method creates an order from items data and validates stock availability.
-        Unit price is taken from product.price, not from user input.
-        Stock will be decreased only after payment is completed.
+        This method creates an order from items data, validates stock availability,
+        and immediately processes payment through POS device. If payment is successful,
+        stock is decreased and order status is updated to 'paid'.
         
         Args:
             session_key: Django session key
             items: List of order items with product_id and quantity
+            process_payment: If True, payment will be processed immediately via POS
             
         Returns:
-            Order: Created order instance
+            Tuple[Order, Optional[Transaction]]: Created order and transaction (if payment processed)
             
         Raises:
             ValueError: If items list is empty or product not found
             InsufficientStockException: If insufficient stock for any item
+            GatewayException: If payment gateway is not active or payment fails
         """
         if not items:
             raise ValueError('Items list is empty')
@@ -95,7 +101,7 @@ class OrderService:
             payment_status='pending'
         )
         
-        # Create order items (stock will be decreased after payment is completed)
+        # Create order items
         for item_data in order_items_data:
             OrderItem.objects.create(
                 order=order,
@@ -115,7 +121,142 @@ class OrderService:
             }
         )
         
-        return order
+        transaction_obj = None
+        
+        # Process payment immediately if requested
+        if process_payment:
+            try:
+                # Check if gateway is active
+                if not PaymentGatewayAdapter.is_gateway_active():
+                    raise GatewayException('Payment gateway is not active')
+                
+                gateway = PaymentGatewayAdapter.get_gateway()
+                
+                # Prepare order details for payment
+                order_details = {
+                    'order_number': order_number,
+                    'order_id': order.id,
+                }
+                
+                # Initiate payment through gateway (this will send to POS device)
+                gateway_response = gateway.initiate_payment(
+                    amount=total_amount,
+                    order_details=order_details
+                )
+                
+                # Debug: Log gateway response
+                LogService.log_info(
+                    'payment',
+                    'gateway_response_received',
+                    details={
+                        'order_id': order.id,
+                        'gateway_response': gateway_response,
+                        'success': gateway_response.get('success'),
+                        'status': gateway_response.get('status')
+                    }
+                )
+                
+                # Generate transaction ID
+                transaction_id = PaymentService.generate_transaction_id()
+                
+                # Determine payment status from gateway response
+                # Check both 'success' field and 'status' field
+                payment_success = gateway_response.get('success', False)
+                gateway_status = gateway_response.get('status', '')
+                
+                # If gateway returns status='success', consider it successful
+                if gateway_status == 'success':
+                    payment_success = True
+                
+                payment_status = 'success' if payment_success else 'failed'
+                
+                LogService.log_info(
+                    'payment',
+                    'payment_status_determined',
+                    details={
+                        'order_id': order.id,
+                        'payment_success': payment_success,
+                        'payment_status': payment_status,
+                        'gateway_status': gateway_status
+                    }
+                )
+                
+                # Create transaction record
+                transaction_obj = Transaction.objects.create(
+                    transaction_id=transaction_id,
+                    order_id=order.id,
+                    order_details=order_details,
+                    amount=total_amount,
+                    status=payment_status,
+                    gateway_name=gateway.__class__.__name__,
+                    gateway_request_data={'amount': total_amount, 'order_details': order_details},
+                    gateway_response_data=gateway_response
+                )
+                
+                # Update order with transaction ID
+                order.transaction_id = transaction_id
+                
+                # If payment successful, update order status and decrease stock
+                if payment_success:
+                    updated_order = OrderService.update_payment_status(order.id, 'paid')
+                    # Refresh order object to get latest status
+                    order.refresh_from_db()
+                    LogService.log_info(
+                        'payment',
+                        'payment_completed',
+                        details={
+                            'transaction_id': transaction_id,
+                            'order_id': order.id,
+                            'order_number': order_number,
+                            'amount': total_amount
+                        }
+                    )
+                else:
+                    # Payment failed - update order status
+                    order.payment_status = 'failed'
+                    order.status = 'cancelled'
+                    order.save()
+                    
+                    error_message = gateway_response.get('response_message', 'Payment failed')
+                    transaction_obj.error_message = error_message
+                    transaction_obj.save()
+                    
+                    LogService.log_error(
+                        'payment',
+                        'payment_failed',
+                        details={
+                            'transaction_id': transaction_id,
+                            'order_id': order.id,
+                            'order_number': order_number,
+                            'amount': total_amount,
+                            'error': error_message
+                        }
+                    )
+                    
+                    raise GatewayException(f'Payment failed: {error_message}')
+                
+            except GatewayException:
+                # Re-raise gateway exceptions
+                raise
+            except Exception as e:
+                # Log unexpected errors
+                LogService.log_error(
+                    'payment',
+                    'payment_processing_error',
+                    details={
+                        'order_id': order.id,
+                        'order_number': order_number,
+                        'amount': total_amount,
+                        'error': str(e)
+                    }
+                )
+                # Mark order as failed
+                order.payment_status = 'failed'
+                order.status = 'cancelled'
+                order.save()
+                raise GatewayException(f'Failed to process payment: {str(e)}')
+        
+        return order, transaction_obj
     
     @staticmethod
     @transaction.atomic

@@ -44,6 +44,6 @@ class CategoryProductsAPIView(generics.GenericAPIView):
         """
         category = Category.objects.get(pk=pk)
         products = CategorySelector.get_category_products(category.id)
-        serializer = self.get_serializer(products, many=True)
+        serializer = self.get_serializer(products, many=True, context={'request': request})
         return Response(serializer.data)
 
