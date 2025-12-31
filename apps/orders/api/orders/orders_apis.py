@@ -68,7 +68,7 @@ class OrderCreateAPIView(generics.GenericAPIView):
             session_key = request.session.session_key
         
         try:
-            order, transaction = OrderService.create_order_from_items(
+            order = OrderService.create_order_from_items(
                 session_key, 
                 request_data['items'],
                 process_payment=True
@@ -76,12 +76,12 @@ class OrderCreateAPIView(generics.GenericAPIView):
             
             response_data = OrderSerializer(order).data
             
-            # Add payment information to response
-            if transaction:
+            # Add payment information to response (from order itself)
+            if order.transaction_id:
                 response_data['payment'] = {
-                    'transaction_id': transaction.transaction_id,
-                    'status': transaction.status,
-                    'gateway_name': transaction.gateway_name
+                    'transaction_id': order.transaction_id,
+                    'status': order.payment_status,
+                    'gateway_name': order.gateway_name
                 }
             
             return Response(

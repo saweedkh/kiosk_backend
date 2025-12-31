@@ -22,5 +22,8 @@ class CategorySelector:
         return Product.objects.filter(
             category_id=category_id,
             is_active=True
-        ).select_related('category')
+        ).select_related('category').order_by(
+            '-stock_quantity',  # Products with stock first (descending order)
+            'name'  # Then by name for consistent ordering
+        )
 

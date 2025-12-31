@@ -2,7 +2,6 @@ from django.db.models import Sum, Count, Avg, Q, F
 from django.utils import timezone
 from datetime import timedelta, datetime
 from apps.orders.models import Order, OrderItem
-from apps.payment.models import Transaction
 from apps.products.models import Product
 
 
@@ -16,39 +15,67 @@ class ReportSelector:
         if end_date:
             queryset = queryset.filter(created_at__lte=end_date)
         
+        # محاسبه مجموع فروش و تعداد سفارشات
         total_sales = queryset.aggregate(
             total_amount=Sum('total_amount'),
-            total_orders=Count('id'),
-            average_order=Avg('total_amount')
+            total_orders=Count('id')
         )
         
+        # محاسبه میانگین به صورت جداگانه
+        total_amount = total_sales['total_amount'] or 0
+        total_orders = total_sales['total_orders'] or 0
+        average_order_value = (total_amount / total_orders) if total_orders > 0 else 0
+        
+        # لیست سفارشات با فیلدهای کامل
+        orders_list = list(queryset.values(
+            'id', 'order_number', 'total_amount', 'status', 
+            'payment_status', 'transaction_id', 'gateway_name',
+            'payment_method', 'created_at', 'updated_at'
+        ))
+        
         return {
-            'total_sales': total_sales['total_amount'] or 0,
-            'total_orders': total_sales['total_orders'] or 0,
-            'average_order': total_sales['average_order'] or 0,
-            'start_date': start_date,
-            'end_date': end_date
+            'total_sales': total_amount,
+            'total_orders': total_orders,
+            'average_order_value': round(average_order_value, 2),
+            'orders': orders_list,
+            'start_date': start_date.isoformat() if start_date else None,
+            'end_date': end_date.isoformat() if end_date else None
         }
     
     @staticmethod
     def get_transaction_report(start_date=None, end_date=None):
-        queryset = Transaction.objects.all()
+        # استفاده از Order به جای Transaction
+        queryset = Order.objects.exclude(transaction_id__isnull=True).exclude(transaction_id='')
         
         if start_date:
             queryset = queryset.filter(created_at__gte=start_date)
         if end_date:
             queryset = queryset.filter(created_at__lte=end_date)
         
-        successful = queryset.filter(status='success')
-        failed = queryset.filter(status='failed')
+        successful = queryset.filter(payment_status='paid')
+        failed = queryset.filter(payment_status='failed')
+        
+        # لیست تراکنش‌ها (از Order) با فیلدهای کامل
+        transactions_list = list(queryset.values(
+            'id', 'order_number', 'transaction_id', 'total_amount', 
+            'payment_status', 'gateway_name', 'payment_method',
+            'error_message', 'created_at', 'updated_at'
+        ))
+        
+        # تغییر نام فیلدها برای سازگاری با serializer
+        for trans in transactions_list:
+            trans['order_id'] = trans['id']
+            trans['amount'] = trans['total_amount']
+            trans['status'] = trans['payment_status']
         
         return {
             'total_transactions': queryset.count(),
             'successful_transactions': successful.count(),
             'failed_transactions': failed.count(),
-            'total_amount': successful.aggregate(total=Sum('amount'))['total'] or 0,
-            'start_date': start_date,
-            'end_date': end_date
+            'total_amount': successful.aggregate(total=Sum('total_amount'))['total'] or 0,
+            'transactions': transactions_list,
+            'start_date': start_date.isoformat() if start_date else None,
+            'end_date': end_date.isoformat() if end_date else None
         }
     
     @staticmethod
@@ -65,19 +92,59 @@ class ReportSelector:
             )
         )
         
-        return products.values(
-            'id', 'name', 'price', 'stock_quantity',
-            'total_sold', 'total_revenue'
-        )
+        products_list = list(products.values(
+            'id', 'name', 'description', 'price', 'stock_quantity', 'is_active',
+            'category__name', 'total_sold', 'total_revenue'
+        ))
+        
+        # تغییر نام فیلد category__name به category_name
+        for product in products_list:
+            product['category_name'] = product.pop('category__name', '')
+        
+        total_products = Product.objects.count()
+        active_products = Product.objects.filter(is_active=True).count()
+        
+        return {
+            'total_products': total_products,
+            'active_products': active_products,
+            'products': products_list
+        }
     
     @staticmethod
     def get_stock_report():
-        out_of_stock = Product.objects.filter(stock_quantity=0).count()
-        total_products = Product.objects.count()
+        products = Product.objects.all()
+        
+        # محاسبه ارزش کل موجودی و تعداد کل آیتم‌ها با استفاده از aggregate
+        stock_aggregate = products.aggregate(
+            total_stock_value=Sum(F('stock_quantity') * F('price')),
+            total_items=Sum('stock_quantity')
+        )
+        
+        total_stock_value = stock_aggregate['total_stock_value'] or 0
+        total_items = stock_aggregate['total_items'] or 0
+        
+        # جزئیات موجودی هر محصول
+        stock_details = []
+        for product in products:
+            stock_value = product.stock_quantity * product.price
+            min_stock = getattr(product, 'min_stock_level', 10)
+            
+            stock_details.append({
+                'id': product.id,
+                'name': product.name,
+                'category_name': product.category.name if product.category else '',
+                'stock_quantity': product.stock_quantity,
+                'price': product.price,
+                'stock_value': stock_value,
+                'is_active': product.is_active,
+                'is_low_stock': product.stock_quantity < min_stock,
+                'is_out_of_stock': product.stock_quantity == 0
+            })
         
         return {
-            'out_of_stock_count': out_of_stock,
-            'total_products': total_products
+            'total_stock_value': total_stock_value,
+            'total_items': total_items,
+            'stock_details': stock_details
         }
     
     @staticmethod
@@ -89,14 +156,23 @@ class ReportSelector:
         end = timezone.make_aware(datetime.combine(date, datetime.max.time()))
         
         orders = Order.objects.filter(created_at__range=[start, end])
-        transactions = Transaction.objects.filter(created_at__range=[start, end])
+        # استفاده از Order به جای Transaction
+        transactions = Order.objects.filter(
+            created_at__range=[start, end]
+        ).exclude(transaction_id__isnull=True).exclude(transaction_id='')
+        
+        # لیست سفارشات با فیلدهای کامل
+        orders_list = list(orders.values(
+            'id', 'order_number', 'total_amount', 'status', 
+            'payment_status', 'transaction_id', 'gateway_name',
+            'payment_method', 'created_at', 'updated_at'
+        ))
         
         return {
             'date': date.isoformat(),
             'total_orders': orders.count(),
             'total_sales': orders.aggregate(total=Sum('total_amount'))['total'] or 0,
             'total_transactions': transactions.count(),
-            'successful_transactions': transactions.filter(status='success').count(),
-            'failed_transactions': transactions.filter(status='failed').count()
+            'orders': orders_list
         }
 

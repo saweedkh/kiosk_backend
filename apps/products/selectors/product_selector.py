@@ -15,11 +15,16 @@ class ProductSelector:
     def get_active_products() -> QuerySet[Product]:
         """
         Get all active products with category information.
+        Products with stock are ordered first.
         
         Returns:
-            QuerySet[Product]: QuerySet of active products with category prefetched
+            QuerySet[Product]: QuerySet of active products with category prefetched,
+            ordered by stock availability (products with stock first)
         """
-        return Product.objects.active().select_related('category')
+        return Product.objects.active().select_related('category').order_by(
+            '-stock_quantity',  # Products with stock first (descending order)
+            'name'  # Then by name for consistent ordering
+        )
     
     @staticmethod
     def get_products_with_stock() -> QuerySet[Product]:
@@ -38,35 +43,45 @@ class ProductSelector:
     def get_products_by_category(category_id: int) -> QuerySet[Product]:
         """
         Get active products with stock by category.
+        Products with more stock are ordered first.
         
         Args:
             category_id: Category ID
             
         Returns:
-            QuerySet[Product]: QuerySet of products in specified category
+            QuerySet[Product]: QuerySet of products in specified category,
+            ordered by stock quantity (descending)
         """
         return Product.objects.filter(
             category_id=category_id,
             is_active=True,
             stock_quantity__gt=0
-        ).select_related('category')
+        ).select_related('category').order_by(
+            '-stock_quantity',  # Products with more stock first
+            'name'  # Then by name for consistent ordering
+        )
     
     @staticmethod
     def search_products(query: str) -> QuerySet[Product]:
         """
         Search products by name or description.
+        Products with stock are ordered first.
         
         Args:
             query: Search query string
             
         Returns:
-            QuerySet[Product]: QuerySet of products matching search query
+            QuerySet[Product]: QuerySet of products matching search query,
+            ordered by stock availability (products with stock first)
         """
         return Product.objects.filter(
             Q(name__icontains=query) |
             Q(description__icontains=query),
             is_active=True
-        ).select_related('category')
+        ).select_related('category').order_by(
+            '-stock_quantity',  # Products with stock first (descending order)
+            'name'  # Then by name for consistent ordering
+        )
     
     @staticmethod
     def get_product_with_details(product_id: int) -> Product:

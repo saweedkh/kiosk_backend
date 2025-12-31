@@ -10,7 +10,6 @@ from apps.core.exceptions.order import OrderNotFoundException
 from apps.core.exceptions.order import InsufficientStockException
 from apps.payment.gateway.adapter import PaymentGatewayAdapter
 from apps.payment.gateway.exceptions import GatewayException
-from apps.payment.models import Transaction
 from apps.payment.services.payment_service import PaymentService
 
 
@@ -38,7 +37,7 @@ class OrderService:
     
     @staticmethod
     @transaction.atomic
-    def create_order_from_items(session_key: str, items: List[Dict], process_payment: bool = True) -> Tuple[Order, Optional[Transaction]]:
+    def create_order_from_items(session_key: str, items: List[Dict], process_payment: bool = True) -> Order:
         """
         Create order from items data sent from frontend and process payment directly.
         
@@ -52,7 +51,7 @@ class OrderService:
             process_payment: If True, payment will be processed immediately via POS
             
         Returns:
-            Tuple[Order, Optional[Transaction]]: Created order and transaction (if payment processed)
+            Order: Created order with payment information
             
         Raises:
             ValueError: If items list is empty or product not found
@@ -121,8 +120,6 @@ class OrderService:
             }
         )
         
-        transaction_obj = None
-        
         # Process payment immediately if requested
         if process_payment:
             try:
@@ -181,23 +178,16 @@ class OrderService:
                     }
                 )
                 
-                # Create transaction record
-                transaction_obj = Transaction.objects.create(
-                    transaction_id=transaction_id,
-                    order_id=order.id,
-                    order_details=order_details,
-                    amount=total_amount,
-                    status=payment_status,
-                    gateway_name=gateway.__class__.__name__,
-                    gateway_request_data={'amount': total_amount, 'order_details': order_details},
-                    gateway_response_data=gateway_response
-                )
-                
-                # Update order with transaction ID
+                # Update order with payment/transaction information
                 order.transaction_id = transaction_id
+                order.gateway_name = gateway.__class__.__name__
+                order.gateway_request_data = {'amount': total_amount, 'order_details': order_details}
+                order.gateway_response_data = gateway_response
+                order.order_details = order_details
                 
                 # If payment successful, update order status and decrease stock
                 if payment_success:
+                    order.payment_status = 'paid'
                     updated_order = OrderService.update_payment_status(order.id, 'paid')
                     # Refresh order object to get latest status
                     order.refresh_from_db()
@@ -215,11 +205,9 @@ class OrderService:
                     # Payment failed - update order status
                     order.payment_status = 'failed'
                     order.status = 'cancelled'
-                    order.save()
-                    
                     error_message = gateway_response.get('response_message', 'Payment failed')
-                    transaction_obj.error_message = error_message
-                    transaction_obj.save()
+                    order.error_message = error_message
+                    order.save()
                     
                     LogService.log_error(
                         'payment',
@@ -253,10 +241,11 @@ class OrderService:
                 # Mark order as failed
                 order.payment_status = 'failed'
                 order.status = 'cancelled'
+                order.error_message = str(e)
                 order.save()
                 raise GatewayException(f'Failed to process payment: {str(e)}')
         
-        return order, transaction_obj
+        return order
     
     @staticmethod
     @transaction.atomic

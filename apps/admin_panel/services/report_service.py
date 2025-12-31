@@ -101,9 +101,7 @@ class ReportService:
                 - total_products: Total number of products
                 - active_products: Number of active products
         """
-        report = {
-            'products': list(ReportSelector.get_product_report())
-        }
+        report = ReportSelector.get_product_report()
         
         LogService.log_info(
             'admin',
