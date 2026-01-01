@@ -213,6 +213,11 @@ PAYMENT_GATEWAY_CONFIG = {
     'mock_payment_success_rate': float(os.getenv('MOCK_PAYMENT_SUCCESS_RATE', '100')),  # Success rate percentage (0-100, default: 100 = always success)
 }
 
+# Printer Configuration
+PRINTER_ENABLED = os.getenv('PRINTER_ENABLED', 'False') == 'True'
+PRINTER_IP = os.getenv('PRINTER_IP', '192.168.1.100')
+PRINTER_PORT = int(os.getenv('PRINTER_PORT', '9100'))
+
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Kiosk Backend API',
     'DESCRIPTION': 'API documentation for Kiosk Backend - Store management system with card reader payment integration',

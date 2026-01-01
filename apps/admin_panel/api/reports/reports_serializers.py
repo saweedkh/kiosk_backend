@@ -14,24 +14,17 @@ class DailyReportSerializer(serializers.Serializer):
 
 
 class SalesReportResponseSerializer(serializers.Serializer):
-    """Serializer for sales report response."""
+    """Serializer for sales report response (includes transaction statistics)."""
     total_sales = serializers.IntegerField(help_text=_('Total sales amount'))
     total_orders = serializers.IntegerField(help_text=_('Total number of orders'))
     average_order_value = serializers.FloatField(help_text=_('Average order value'))
-    start_date = serializers.CharField(required=False, allow_null=True, help_text=_('Start date'))
-    end_date = serializers.CharField(required=False, allow_null=True, help_text=_('End date'))
-    orders = serializers.ListField(child=serializers.DictField(), help_text=_('List of orders (paginated)'))
-
-
-class TransactionReportResponseSerializer(serializers.Serializer):
-    """Serializer for transaction report response."""
     total_transactions = serializers.IntegerField(help_text=_('Total number of transactions'))
     successful_transactions = serializers.IntegerField(help_text=_('Number of successful transactions'))
     failed_transactions = serializers.IntegerField(help_text=_('Number of failed transactions'))
-    total_amount = serializers.IntegerField(help_text=_('Total transaction amount'))
+    successful_amount = serializers.IntegerField(help_text=_('Total successful transaction amount'))
     start_date = serializers.CharField(required=False, allow_null=True, help_text=_('Start date'))
     end_date = serializers.CharField(required=False, allow_null=True, help_text=_('End date'))
-    transactions = serializers.ListField(child=serializers.DictField(), help_text=_('List of transactions (paginated)'))
+    orders = serializers.ListField(child=serializers.DictField(), help_text=_('List of orders (paginated)'))
 
 
 class ProductReportResponseSerializer(serializers.Serializer):

@@ -4,7 +4,6 @@ from apps.admin_panel.api.reports.reports_serializers import (
     DateRangeSerializer,
     DailyReportSerializer,
     SalesReportResponseSerializer,
-    TransactionReportResponseSerializer,
     ProductReportResponseSerializer,
     StockReportResponseSerializer,
     DailyReportResponseSerializer
@@ -27,7 +26,7 @@ class SalesReportAPIView(generics.GenericAPIView):
         page: Page number (optional, default: 1)
         page_size: Items per page (optional, default: 50, max: 500)
         
-    Returns sales statistics including total sales, total orders, and average order value.
+    Returns comprehensive sales and transaction statistics including total sales, total orders, average order value, and transaction details (successful/failed transactions).
     Orders list is paginated.
     """
     permission_classes = [IsAdminUser]
@@ -43,7 +42,7 @@ class SalesReportAPIView(generics.GenericAPIView):
             ResponseStatusCodes.FORBIDDEN,
         ],
         summary="Sales Report",
-        description="Generate sales report with statistics including total sales, total orders, and average order value. Orders list is paginated.",
+        description="Generate comprehensive sales and transaction report with statistics including total sales, total orders, average order value, and transaction details. Orders list is paginated.",
         tags=["Admin - Reports"],
         operation_id="admin_reports_sales",
     )
@@ -67,11 +66,15 @@ class SalesReportAPIView(generics.GenericAPIView):
             user=request.user
         )
         
-        # Extract summary data
+        # Extract summary data (includes both sales and transaction stats)
         summary_data = {
             'total_sales': report.get('total_sales', 0),
             'total_orders': report.get('total_orders', 0),
             'average_order_value': report.get('average_order_value', 0),
+            'total_transactions': report.get('total_transactions', 0),
+            'successful_transactions': report.get('successful_transactions', 0),
+            'failed_transactions': report.get('failed_transactions', 0),
+            'successful_amount': report.get('successful_amount', 0),
             'start_date': report.get('start_date'),
             'end_date': report.get('end_date')
         }
@@ -86,80 +89,6 @@ class SalesReportAPIView(generics.GenericAPIView):
         # Return paginated response with summary
         return paginator.get_paginated_response(
             paginated_orders,
-            summary_data=summary_data
-        )
-
-
-class TransactionReportAPIView(generics.GenericAPIView):
-    """
-    API endpoint for generating transaction report (Admin only).
-    
-    Query Parameters:
-        start_date: Start date for report (optional)
-        end_date: End date for report (optional)
-        page: Page number (optional, default: 1)
-        page_size: Items per page (optional, default: 50, max: 500)
-        
-    Returns payment transaction statistics including success/failure rates.
-    Transactions list is paginated.
-    """
-    permission_classes = [IsAdminUser]
-    serializer_class = DateRangeSerializer
-    pagination_class = ReportPagination
-    
-    @custom_extend_schema(
-        resource_name="TransactionReport",
-        response_serializer=TransactionReportResponseSerializer,
-        status_codes=[
-            ResponseStatusCodes.OK_PAGINATED,
-            ResponseStatusCodes.UNAUTHORIZED,
-            ResponseStatusCodes.FORBIDDEN,
-        ],
-        summary="Transaction Report",
-        description="Generate payment transaction report with statistics including success/failure rates and total amounts. Transactions list is paginated.",
-        tags=["Admin - Reports"],
-        operation_id="admin_reports_transaction",
-    )
-    def get(self, request):
-        """
-        Generate transaction report with pagination.
-        
-        Args:
-            request: HTTP request object with optional date range and pagination params
-            
-        Returns:
-            Response: Transaction report data with paginated transactions list
-        """
-        params_serializer = DateRangeSerializer(data=request.query_params)
-        params_serializer.is_valid(raise_exception=True)
-        params = params_serializer.validated_data
-        
-        report = ReportService.get_transaction_report(
-            start_date=params.get('start_date'),
-            end_date=params.get('end_date'),
-            user=request.user
-        )
-        
-        # Extract summary data
-        summary_data = {
-            'total_transactions': report.get('total_transactions', 0),
-            'successful_transactions': report.get('successful_transactions', 0),
-            'failed_transactions': report.get('failed_transactions', 0),
-            'total_amount': report.get('total_amount', 0),
-            'start_date': report.get('start_date'),
-            'end_date': report.get('end_date')
-        }
-        
-        # Get transactions list for pagination
-        transactions = report.get('transactions', [])
-        
-        # Paginate transactions
-        paginator = self.pagination_class()
-        paginated_transactions = paginator.paginate_queryset(transactions, request)
-        
-        # Return paginated response with summary
-        return paginator.get_paginated_response(
-            paginated_transactions,
             summary_data=summary_data
         )
 
@@ -379,7 +308,7 @@ class SalesReportExportAPIView(generics.GenericAPIView):
         operation_id="admin_reports_sales_export",
     )
     def get(self, request):
-        """Export sales report to Excel."""
+        """Export sales report to Excel and return file URL."""
         params_serializer = DateRangeSerializer(data=request.query_params)
         params_serializer.is_valid(raise_exception=True)
         params = params_serializer.validated_data
@@ -390,47 +319,12 @@ class SalesReportExportAPIView(generics.GenericAPIView):
             user=request.user
         )
         
-        return ExcelExporter.export_sales_report(report)
-
-
-class TransactionReportExportAPIView(generics.GenericAPIView):
-    """
-    API endpoint for exporting transaction report to Excel (Admin only).
-    
-    Query Parameters:
-        start_date: Start date for report (optional)
-        end_date: End date for report (optional)
+        file_url = ExcelExporter.export_sales_report(report, request=request)
         
-    Returns Excel file with transaction report data.
-    """
-    permission_classes = [IsAdminUser]
-    serializer_class = DateRangeSerializer
-    
-    @custom_extend_schema(
-        resource_name="TransactionReportExport",
-        status_codes=[
-            ResponseStatusCodes.OK,
-            ResponseStatusCodes.UNAUTHORIZED,
-            ResponseStatusCodes.FORBIDDEN,
-        ],
-        summary="Export Transaction Report to Excel",
-        description="Export transaction report to Excel format with statistics and transaction details.",
-        tags=["Admin - Reports"],
-        operation_id="admin_reports_transaction_export",
-    )
-    def get(self, request):
-        """Export transaction report to Excel."""
-        params_serializer = DateRangeSerializer(data=request.query_params)
-        params_serializer.is_valid(raise_exception=True)
-        params = params_serializer.validated_data
-        
-        report = ReportService.get_transaction_report(
-            start_date=params.get('start_date'),
-            end_date=params.get('end_date'),
-            user=request.user
-        )
-        
-        return ExcelExporter.export_transaction_report(report)
+        return Response({
+            'message': 'گزارش با موفقیت ایجاد شد',
+            'file_url': file_url
+        }, status=status.HTTP_200_OK)
 
 
 class ProductReportExportAPIView(generics.GenericAPIView):
@@ -454,10 +348,15 @@ class ProductReportExportAPIView(generics.GenericAPIView):
         operation_id="admin_reports_product_export",
     )
     def get(self, request):
-        """Export product report to Excel."""
+        """Export product report to Excel and return file URL."""
         report = ReportService.get_product_report(user=request.user)
         
-        return ExcelExporter.export_product_report(report)
+        file_url = ExcelExporter.export_product_report(report, request=request)
+        
+        return Response({
+            'message': 'گزارش با موفقیت ایجاد شد',
+            'file_url': file_url
+        }, status=status.HTTP_200_OK)
 
 
 class StockReportExportAPIView(generics.GenericAPIView):
@@ -481,10 +380,15 @@ class StockReportExportAPIView(generics.GenericAPIView):
         operation_id="admin_reports_stock_export",
     )
     def get(self, request):
-        """Export stock report to Excel."""
+        """Export stock report to Excel and return file URL."""
         report = ReportService.get_stock_report(user=request.user)
         
-        return ExcelExporter.export_stock_report(report)
+        file_url = ExcelExporter.export_stock_report(report, request=request)
+        
+        return Response({
+            'message': 'گزارش با موفقیت ایجاد شد',
+            'file_url': file_url
+        }, status=status.HTTP_200_OK)
 
 
 class DailyReportExportAPIView(generics.GenericAPIView):
@@ -512,7 +416,7 @@ class DailyReportExportAPIView(generics.GenericAPIView):
         operation_id="admin_reports_daily_export",
     )
     def get(self, request):
-        """Export daily report to Excel."""
+        """Export daily report to Excel and return file URL."""
         params_serializer = DailyReportSerializer(data=request.query_params)
         params_serializer.is_valid(raise_exception=True)
         params = params_serializer.validated_data
@@ -522,5 +426,10 @@ class DailyReportExportAPIView(generics.GenericAPIView):
             user=request.user
         )
         
-        return ExcelExporter.export_daily_report(report)
+        file_url = ExcelExporter.export_daily_report(report, request=request)
+        
+        return Response({
+            'message': 'گزارش با موفقیت ایجاد شد',
+            'file_url': file_url
+        }, status=status.HTTP_200_OK)
 

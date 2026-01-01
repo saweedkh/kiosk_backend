@@ -23,7 +23,7 @@ class ReportService:
         user: Optional[User] = None
     ) -> Dict[str, Any]:
         """
-        Get sales report for specified date range.
+        Get comprehensive sales and transaction report for specified date range.
         
         Args:
             start_date: Start date for report (optional)
@@ -31,10 +31,14 @@ class ReportService:
             user: Admin user requesting the report (optional)
             
         Returns:
-            Dict[str, Any]: Sales report data including:
+            Dict[str, Any]: Sales and transaction report data including:
                 - total_sales: Total sales amount
                 - total_orders: Total number of orders
                 - average_order_value: Average order value
+                - total_transactions: Total number of transactions
+                - successful_transactions: Number of successful transactions
+                - failed_transactions: Number of failed transactions
+                - successful_amount: Total successful transaction amount
                 - orders: List of orders in date range
         """
         report = ReportSelector.get_sales_report(start_date, end_date)
@@ -51,41 +55,6 @@ class ReportService:
         
         return report
     
-    @staticmethod
-    def get_transaction_report(
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-        user: Optional[User] = None
-    ) -> Dict[str, Any]:
-        """
-        Get payment transaction report for specified date range.
-        
-        Args:
-            start_date: Start date for report (optional)
-            end_date: End date for report (optional)
-            user: Admin user requesting the report (optional)
-            
-        Returns:
-            Dict[str, Any]: Transaction report data including:
-                - total_transactions: Total number of transactions
-                - successful_transactions: Number of successful transactions
-                - failed_transactions: Number of failed transactions
-                - total_amount: Total transaction amount
-                - transactions: List of transactions in date range
-        """
-        report = ReportSelector.get_transaction_report(start_date, end_date)
-        
-        LogService.log_info(
-            'admin',
-            'transaction_report_generated',
-            user=user,
-            details={
-                'start_date': str(start_date) if start_date else None,
-                'end_date': str(end_date) if end_date else None
-            }
-        )
-        
-        return report
     
     @staticmethod
     def get_product_report(user: Optional[User] = None) -> Dict[str, Any]:

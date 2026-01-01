@@ -1,12 +1,10 @@
 from django.urls import path
 from apps.admin_panel.api.reports.reports_apis import (
     SalesReportAPIView,
-    TransactionReportAPIView,
     ProductReportAPIView,
     StockReportAPIView,
     DailyReportAPIView,
     SalesReportExportAPIView,
-    TransactionReportExportAPIView,
     ProductReportExportAPIView,
     StockReportExportAPIView,
     DailyReportExportAPIView
@@ -15,8 +13,6 @@ from apps.admin_panel.api.reports.reports_apis import (
 urlpatterns = [
     path('sales/', SalesReportAPIView.as_view(), name='report-sales'),
     path('sales/export/', SalesReportExportAPIView.as_view(), name='report-sales-export'),
-    path('transactions/', TransactionReportAPIView.as_view(), name='report-transactions'),
-    path('transactions/export/', TransactionReportExportAPIView.as_view(), name='report-transactions-export'),
     path('products/', ProductReportAPIView.as_view(), name='report-products'),
     path('products/export/', ProductReportExportAPIView.as_view(), name='report-products-export'),
     path('stock/', StockReportAPIView.as_view(), name='report-stock'),

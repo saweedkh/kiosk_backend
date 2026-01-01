@@ -19,6 +19,7 @@ class Order(TimeStampedModel):
     total_amount = models.IntegerField(verbose_name=_('مبلغ کل'))
     payment_status = models.CharField(max_length=20, default='pending', verbose_name=_('وضعیت پرداخت'))
     transaction_id = models.CharField(max_length=100, null=True, blank=True, unique=True, verbose_name=_('شناسه تراکنش'))
+    receipt_number = models.IntegerField(null=True, blank=True, verbose_name=_('شماره رسید روزانه'))
     
     # Payment/Transaction fields (merged from Transaction model)
     payment_method = models.CharField(max_length=50, null=True, blank=True, verbose_name=_('روش پرداخت'))

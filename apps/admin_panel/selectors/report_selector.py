@@ -26,6 +26,16 @@ class ReportSelector:
         total_orders = total_sales['total_orders'] or 0
         average_order_value = (total_amount / total_orders) if total_orders > 0 else 0
         
+        # محاسبه آمار تراکنش‌ها (سفارشات با transaction_id)
+        transactions_queryset = queryset.exclude(transaction_id__isnull=True).exclude(transaction_id='')
+        successful_transactions = transactions_queryset.filter(payment_status='paid')
+        failed_transactions = transactions_queryset.filter(payment_status='failed')
+        
+        total_transactions = transactions_queryset.count()
+        successful_count = successful_transactions.count()
+        failed_count = failed_transactions.count()
+        successful_amount = successful_transactions.aggregate(total=Sum('total_amount'))['total'] or 0
+        
         # لیست سفارشات با فیلدهای کامل
         orders_list = list(queryset.values(
             'id', 'order_number', 'total_amount', 'status', 
@@ -37,43 +47,11 @@ class ReportSelector:
             'total_sales': total_amount,
             'total_orders': total_orders,
             'average_order_value': round(average_order_value, 2),
+            'total_transactions': total_transactions,
+            'successful_transactions': successful_count,
+            'failed_transactions': failed_count,
+            'successful_amount': successful_amount,
             'orders': orders_list,
-            'start_date': start_date.isoformat() if start_date else None,
-            'end_date': end_date.isoformat() if end_date else None
-        }
-    
-    @staticmethod
-    def get_transaction_report(start_date=None, end_date=None):
-        # استفاده از Order به جای Transaction
-        queryset = Order.objects.exclude(transaction_id__isnull=True).exclude(transaction_id='')
-        
-        if start_date:
-            queryset = queryset.filter(created_at__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(created_at__lte=end_date)
-        
-        successful = queryset.filter(payment_status='paid')
-        failed = queryset.filter(payment_status='failed')
-        
-        # لیست تراکنش‌ها (از Order) با فیلدهای کامل
-        transactions_list = list(queryset.values(
-            'id', 'order_number', 'transaction_id', 'total_amount', 
-            'payment_status', 'gateway_name', 'payment_method',
-            'error_message', 'created_at', 'updated_at'
-        ))
-        
-        # تغییر نام فیلدها برای سازگاری با serializer
-        for trans in transactions_list:
-            trans['order_id'] = trans['id']
-            trans['amount'] = trans['total_amount']
-            trans['status'] = trans['payment_status']
-        
-        return {
-            'total_transactions': queryset.count(),
-            'successful_transactions': successful.count(),
-            'failed_transactions': failed.count(),
-            'total_amount': successful.aggregate(total=Sum('total_amount'))['total'] or 0,
-            'transactions': transactions_list,
             'start_date': start_date.isoformat() if start_date else None,
             'end_date': end_date.isoformat() if end_date else None
         }
@@ -161,11 +139,9 @@ class ReportSelector:
             created_at__range=[start, end]
         ).exclude(transaction_id__isnull=True).exclude(transaction_id='')
         
-        # لیست سفارشات با فیلدهای کامل
+        # لیست سفارشات با فیلدهای ضروری برای گزارش روزانه
         orders_list = list(orders.values(
-            'id', 'order_number', 'total_amount', 'status', 
-            'payment_status', 'transaction_id', 'gateway_name',
-            'payment_method', 'created_at', 'updated_at'
+            'order_number', 'total_amount', 'payment_status', 'created_at'
         ))
         
         return {

@@ -5,6 +5,7 @@ from apps.orders.api.orders.orders_serializers import (
     OrderCreateSerializer
 )
 from apps.orders.services.order_service import OrderService
+from apps.orders.services.receipt_service import ReceiptService
 from apps.core.api.schema import custom_extend_schema
 from apps.core.api.schema import ResponseStatusCodes
 from apps.payment.gateway.exceptions import GatewayException
@@ -83,6 +84,17 @@ class OrderCreateAPIView(generics.GenericAPIView):
                     'status': order.payment_status,
                     'gateway_name': order.gateway_name
                 }
+            elif order.error_message:
+                # Add error message if payment gateway was not active or payment failed
+                response_data['payment'] = {
+                    'status': order.payment_status,
+                    'error': order.error_message
+                }
+            
+            # Add receipt data if payment was successful
+            if order.payment_status == 'paid':
+                receipt_data = ReceiptService.generate_receipt_data(order)
+                response_data['receipt'] = receipt_data
             
             return Response(
                 data=response_data,
