@@ -11,7 +11,10 @@ help:
 	@echo "  make collectstatic  - Collect static files"
 
 runserver:
-	python manage.py runserver
+	python manage.py runserver 0.0.0.0:$${SERVER_PORT:-8000}
+
+runserver80:
+	sudo python manage.py runserver 0.0.0.0:80
 
 migrate:
 	python manage.py migrate
