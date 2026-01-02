@@ -87,11 +87,6 @@ class Command(BaseCommand):
         
         self.stdout.write(f'  Timeout: {config.get("timeout", 30)} ثانیه\n')
         
-        # Check if gateway is active
-        if not PaymentGatewayAdapter.is_gateway_active():
-            self.stdout.write(self.style.WARNING('⚠️  Gateway فعال نیست!'))
-            self.stdout.write('برای فعال کردن، متغیر PAYMENT_GATEWAY_ACTIVE را در .env تنظیم کنید.\n')
-        
         # Get gateway instance
         try:
             gateway = PaymentGatewayAdapter.get_gateway()

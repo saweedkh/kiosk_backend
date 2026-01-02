@@ -53,9 +53,6 @@ class PaymentService:
             GatewayException: If payment gateway is not active
             PaymentFailedException: If payment initiation fails
         """
-        if not PaymentGatewayAdapter.is_gateway_active():
-            raise GatewayException('Payment gateway is not active')
-        
         gateway = PaymentGatewayAdapter.get_gateway()
         transaction_id = PaymentService.generate_transaction_id()
         

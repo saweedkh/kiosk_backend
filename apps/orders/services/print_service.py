@@ -8,6 +8,7 @@ from escpos.printer import Network
 from django.conf import settings
 from apps.orders.models import Order
 from apps.orders.services.receipt_service import ReceiptService
+from apps.orders.services.receipt_constants import ReceiptConstants
 from apps.logs.services.log_service import LogService
 
 
@@ -55,12 +56,16 @@ class PrintService:
             vazirmatn_bold_path = os.path.join(static_dir, 'Vazirmatn-Bold.ttf')
             
             if os.path.exists(vazirmatn_bold_path):
-                font_bold_large = ImageFont.truetype(vazirmatn_bold_path, 32)
-                font_bold = ImageFont.truetype(vazirmatn_bold_path, 22)
-                font_normal = ImageFont.truetype(vazirmatn_bold_path, 20)
-                font_date_number = ImageFont.truetype(vazirmatn_bold_path, 24)  # Larger for date/number
-        except:
-            pass
+                font_bold_large = ImageFont.truetype(vazirmatn_bold_path, ReceiptConstants.FONT_SIZE_LARGE)
+                font_bold = ImageFont.truetype(vazirmatn_bold_path, ReceiptConstants.FONT_SIZE_BOLD)
+                font_normal = ImageFont.truetype(vazirmatn_bold_path, ReceiptConstants.FONT_SIZE_NORMAL)
+                font_date_number = ImageFont.truetype(vazirmatn_bold_path, ReceiptConstants.FONT_SIZE_DATE)
+        except (OSError, IOError) as e:
+            LogService.log_warning(
+                'print',
+                'font_load_failed',
+                details={'error': str(e), 'font_path': vazirmatn_bold_path}
+            )
         
         if font_bold_large is None:
             font_bold_large = ImageFont.load_default()
@@ -71,18 +76,18 @@ class PrintService:
         if font_date_number is None:
             font_date_number = font_bold_large
         
-        # Better spacing and padding with more margin from edges
-        side_margin = 8  # Margin from left and right edges
-        top_padding = 20
-        section_spacing = 12
-        store_name_height = 45
-        date_height = 40  # Increased for larger font
-        date_table_spacing = 20  # Extra spacing between date/number and table
-        table_header_height = 40
-        table_row_height = 35
-        total_height = 40
-        thank_you_height = 35
-        bottom_padding = 20
+        # Use constants for spacing and padding
+        side_margin = ReceiptConstants.SIDE_MARGIN
+        top_padding = ReceiptConstants.TOP_PADDING
+        section_spacing = ReceiptConstants.SECTION_SPACING
+        store_name_height = ReceiptConstants.STORE_NAME_HEIGHT
+        date_height = ReceiptConstants.DATE_HEIGHT
+        date_table_spacing = ReceiptConstants.DATE_TABLE_SPACING
+        table_header_height = ReceiptConstants.TABLE_HEADER_HEIGHT
+        table_row_height = ReceiptConstants.TABLE_ROW_HEIGHT
+        total_height = ReceiptConstants.TOTAL_HEIGHT
+        thank_you_height = ReceiptConstants.THANK_YOU_HEIGHT
+        bottom_padding = ReceiptConstants.BOTTOM_PADDING
         
         # Prepare table data with better formatting
         # ترتیب ستون‌ها: قیمت، تعداد، نام (از چپ به راست) - پس نام در سمت راست است
@@ -97,12 +102,11 @@ class PrintService:
             try:
                 price_num = int(price_clean)
                 price_formatted = f"{price_num:,}"
-            except:
+            except (ValueError, TypeError):
                 price_formatted = price
             # Truncate name if too long
-            max_name_len = 20
-            if len(name) > max_name_len:
-                name = name[:max_name_len-3] + '...'
+            if len(name) > ReceiptConstants.MAX_NAME_LENGTH:
+                name = name[:ReceiptConstants.MAX_NAME_LENGTH-3] + '...'
             # ترتیب: قیمت، تعداد، نام
             rows.append([price_formatted, str(quantity), name])
         
@@ -170,17 +174,17 @@ class PrintService:
         table_width = width - (side_margin * 2)  # Table width with margins
         table_x = side_margin  # Start position with margin
         
-        # Better column widths: 25% for price, 25% for quantity, 50% for name (right side)
+        # Better column widths using constants
         col_widths = [
-            int(table_width * 0.25),  # قیمت (چپ)
-            int(table_width * 0.25),  # تعداد (وسط)
-            int(table_width * 0.50)   # نام (راست)
+            int(table_width * ReceiptConstants.COL_WIDTH_PRICE),  # قیمت (چپ)
+            int(table_width * ReceiptConstants.COL_WIDTH_QUANTITY),  # تعداد (وسط)
+            int(table_width * ReceiptConstants.COL_WIDTH_NAME)   # نام (راست)
         ]
         
         # Draw table borders with clean, precise lines
         border_color = (0, 0, 0)
-        border_thick = 2  # Clean outer borders
-        border_thin = 1   # Clean inner borders
+        border_thick = ReceiptConstants.BORDER_THICK
+        border_thin = ReceiptConstants.BORDER_THIN
         
         # Outer borders with margins - clean rectangle
         # Top border
@@ -203,7 +207,7 @@ class PrintService:
         draw.line([(x_pos, table_y), (x_pos, table_y + table_height)], fill=border_color, width=border_thin)
         
         # Draw header with better padding - همه وسط چین
-        cell_padding = 8
+        cell_padding = ReceiptConstants.CELL_PADDING
         x_pos = table_x
         for i, header_text in enumerate(headers):
             col_width = col_widths[i]
@@ -258,11 +262,10 @@ class PrintService:
         try:
             total_num = int(total_clean)
             total_formatted = f"{total_num:,}"
-        except:
+        except (ValueError, TypeError):
             total_formatted = total_amount
         
-        total_label = "مبلغ کل فاکتور :"
-        total_text = f"{total_label} {total_formatted} ریال"
+        total_text = f"{ReceiptConstants.TOTAL_LABEL} {total_formatted} ریال"
         
         # Draw black text centered (no background, no border)
         total_y = y_pos
@@ -276,7 +279,7 @@ class PrintService:
         y_pos += total_height + section_spacing
         
         # Thank you message (centered) with better spacing
-        thank_text = "ممنون از خرید شما 🌱"
+        thank_text = ReceiptConstants.THANK_YOU_MESSAGE
         bbox = draw.textbbox((0, 0), thank_text, font=font_normal)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -361,7 +364,7 @@ class PrintService:
             receipt_data = ReceiptService.generate_receipt_data(order)
             
             # Generate complete receipt image first
-            receipt_image = PrintService.generate_receipt_image(receipt_data, width=576)
+            receipt_image = PrintService.generate_receipt_image(receipt_data, width=ReceiptConstants.IMAGE_WIDTH)
             
             # Get printer configuration
             printer_ip = config.get('ip')
@@ -371,7 +374,7 @@ class PrintService:
             printer = Network(printer_ip, port=printer_port)
             
             # Set printer profile BEFORE using set() to avoid warnings
-            printer.profile.media['width']['pixel'] = 576  # 120mm thermal printer width
+            printer.profile.media['width']['pixel'] = ReceiptConstants.IMAGE_WIDTH  # 120mm thermal printer width
             
             # Print the complete receipt image
             printer.set(align='center')
@@ -408,8 +411,23 @@ class PrintService:
             
             return True
             
+        except (ConnectionError, TimeoutError, OSError) as e:
+            # Network/printer connection errors
+            LogService.log_error(
+                'print',
+                'print_connection_error',
+                details={
+                    'order_id': order.id,
+                    'order_number': order.order_number,
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'printer_ip': config.get('ip'),
+                    'printer_port': config.get('port')
+                }
+            )
+            return False
         except Exception as e:
-            # Log error
+            # Unexpected errors
             LogService.log_error(
                 'print',
                 'print_error',
@@ -417,6 +435,7 @@ class PrintService:
                     'order_id': order.id,
                     'order_number': order.order_number,
                     'error': str(e),
+                    'error_type': type(e).__name__,
                     'printer_ip': config.get('ip'),
                     'printer_port': config.get('port')
                 }

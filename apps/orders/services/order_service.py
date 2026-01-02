@@ -181,12 +181,6 @@ class OrderService:
             GatewayException: If payment gateway is not active or payment fails
         """
         try:
-            if not PaymentGatewayAdapter.is_gateway_active():
-                OrderService._mark_order_as_cancelled(
-                    order, order_number, total_amount, 'Payment gateway is not active'
-                )
-                raise GatewayException('Payment gateway is not active')
-            
             gateway = PaymentGatewayAdapter.get_gateway()
             order_details = {'order_number': order_number, 'order_id': order.id}
             gateway_response = gateway.initiate_payment(amount=total_amount, order_details=order_details)
@@ -223,7 +217,23 @@ class OrderService:
                 
         except GatewayException:
             raise
+        except (ConnectionError, TimeoutError, OSError) as e:
+            # Network-related errors
+            LogService.log_error(
+                'payment',
+                'payment_network_error',
+                details={
+                    'order_id': order.id,
+                    'order_number': order_number,
+                    'amount': total_amount,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
+            )
+            OrderService._mark_order_as_failed(order, order_number, total_amount, None, f'Network error: {str(e)}')
+            raise GatewayException(f'Failed to process payment: Network error - {str(e)}')
         except Exception as e:
+            # Unexpected errors
             LogService.log_error(
                 'payment',
                 'payment_processing_error',
@@ -231,7 +241,8 @@ class OrderService:
                     'order_id': order.id,
                     'order_number': order_number,
                     'amount': total_amount,
-                    'error': str(e)
+                    'error': str(e),
+                    'error_type': type(e).__name__
                 }
             )
             OrderService._mark_order_as_failed(order, order_number, total_amount, None, str(e))
@@ -453,19 +464,24 @@ class OrderService:
         Validate stock availability and decrease stock for order items.
         
         Args:
-            order: Order instance
+            order: Order instance (must have items prefetched with select_related('product'))
             
         Raises:
             InsufficientStockException: If insufficient stock for any item
         """
-        for order_item in order.items.all():
+        # Fetch all items with products in one query to avoid N+1
+        items = list(order.items.select_related('product').all())
+        
+        # Validate stock for all items
+        for order_item in items:
             if order_item.product.stock_quantity < order_item.quantity:
                 raise InsufficientStockException(
                     f'Insufficient stock for product {order_item.product.name}. '
                     f'Available: {order_item.product.stock_quantity}, Requested: {order_item.quantity}'
                 )
         
-        for order_item in order.items.all():
+        # Decrease stock for all items (reuse the same list to avoid duplicate query)
+        for order_item in items:
             StockService.decrease_stock(
                 product_id=order_item.product_id,
                 quantity=order_item.quantity,
@@ -494,7 +510,9 @@ class OrderService:
             raise ValueError(f'Cannot cancel order with status: {order.status}')
         
         if order.payment_status == 'paid':
-            for order_item in order.items.all():
+            # Fetch items with products in one query to avoid N+1
+            items = order.items.select_related('product').all()
+            for order_item in items:
                 StockService.increase_stock(
                     product_id=order_item.product_id,
                     quantity=order_item.quantity,

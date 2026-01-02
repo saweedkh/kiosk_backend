@@ -38,8 +38,4 @@ class PaymentGatewayAdapter:
         
         raise GatewayException(f'Unknown gateway: {gateway_name}')
     
-    @staticmethod
-    def is_gateway_active() -> bool:
-        config = settings.PAYMENT_GATEWAY_CONFIG
-        return config.get('is_active', False)
 

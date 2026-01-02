@@ -1,15 +1,14 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import timedelta
 
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-in-production')
-
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
-
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') if os.getenv('ALLOWED_HOSTS') else []
 
 INSTALLED_APPS = [
@@ -19,14 +18,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_filters',
     'drf_spectacular',
-    
     'apps.products',
     'apps.orders',
     'apps.payment',
@@ -69,48 +66,28 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DATABASE_NAME', 'kiosk_db'),
-        'USER': os.getenv('DATABASE_USER', 'kiosk_user'),
-        'PASSWORD': os.getenv('DATABASE_PASSWORD', ''),
-        'HOST': os.getenv('DATABASE_HOST', 'localhost'),
-        'PORT': os.getenv('DATABASE_PORT', '5432'),
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+        'OPTIONS': {'timeout': 30},
     }
 }
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 LANGUAGE_CODE = 'fa'
-
 TIME_ZONE = 'Asia/Tehran'
-
 USE_I18N = True
-
 USE_TZ = True
-
-LOCALE_PATHS = [
-    BASE_DIR / 'locale',
-]
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
@@ -135,10 +112,9 @@ REST_FRAMEWORK = {
 }
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:8080",
+    'http://localhost:3000',
+    'http://localhost:8080',
 ]
-
 CORS_ALLOW_CREDENTIALS = True
 
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
@@ -151,10 +127,6 @@ LOGGING = {
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
             'style': '{',
         },
     },
@@ -175,99 +147,29 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
-        'kiosk.request': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
     },
 }
 
+# Payment Gateway Configuration
 PAYMENT_GATEWAY_CONFIG = {
     'gateway_name': os.getenv('PAYMENT_GATEWAY_NAME', 'mock'),
-    'is_active': os.getenv('PAYMENT_GATEWAY_ACTIVE', 'True') == 'True',
-    'api_key': os.getenv('PAYMENT_GATEWAY_API_KEY', ''),
-    'api_secret': os.getenv('PAYMENT_GATEWAY_API_SECRET', ''),
     'merchant_id': os.getenv('PAYMENT_GATEWAY_MERCHANT_ID', ''),
     'terminal_id': os.getenv('PAYMENT_GATEWAY_TERMINAL_ID', ''),
-    'device_serial_number': os.getenv('POS_DEVICE_SERIAL_NUMBER', ''),  # Serial number of POS device
-    'callback_url': os.getenv('PAYMENT_GATEWAY_CALLBACK_URL', ''),
-    # POS Card Reader Configuration
-    'connection_type': os.getenv('POS_CONNECTION_TYPE', 'tcp'),  # 'serial' or 'tcp'
-    'serial_port': os.getenv('POS_SERIAL_PORT', 'COM1'),  # e.g., 'COM1', '/dev/ttyUSB0'
-    'serial_baudrate': int(os.getenv('POS_SERIAL_BAUDRATE', '9600')),
     'tcp_host': os.getenv('POS_TCP_HOST', '192.168.1.100'),
     'tcp_port': int(os.getenv('POS_TCP_PORT', '1362')),
     'timeout': int(os.getenv('POS_TIMEOUT', '30')),
-    'pos_message_format': os.getenv('POS_MESSAGE_FORMAT', 'dll_exact'),  # 'dll_exact', 'simple', 'with_terminator', 'iso8583_like', 'simple_tlv'
-    # DLL Configuration (if using DLL)
-    'pos_use_dll': os.getenv('POS_USE_DLL', 'False') == 'True',
-    'dll_path': os.getenv('POS_DLL_PATH', ''),  # Path to DLL file (e.g., 'C:/path/to/pna.pcpos.dll')
-    # Bridge Service Configuration (if using Windows bridge service)
-    'pos_use_bridge': os.getenv('POS_USE_BRIDGE', 'False') == 'True',  # Use Windows bridge service
-    'pos_bridge_host': os.getenv('POS_BRIDGE_HOST', '192.168.1.50'),  # IP of Windows machine running bridge service
-    'pos_bridge_port': int(os.getenv('POS_BRIDGE_PORT', 8080)),  # Port of bridge service
-    # Mock Gateway Configuration
-    'mock_payment_delay': float(os.getenv('MOCK_PAYMENT_DELAY', '3')),  # Delay in seconds for mock payment (default: 3 seconds)
-    'mock_payment_success': os.getenv('MOCK_PAYMENT_SUCCESS', 'True') == 'True',  # Whether mock payment should succeed (default: True)
-    'mock_payment_success_rate': float(os.getenv('MOCK_PAYMENT_SUCCESS_RATE', '100')),  # Success rate percentage (0-100, default: 100 = always success)
+    'dll_path': str(BASE_DIR / 'pna.pcpos.dll'),
+    'mock_payment_delay': float(os.getenv('MOCK_PAYMENT_DELAY', '3')),
+    'mock_payment_success': os.getenv('MOCK_PAYMENT_SUCCESS', 'True') == 'True',
 }
 
 # Printer Configuration
 PRINTER_ENABLED = os.getenv('PRINTER_ENABLED', 'False') == 'True'
 PRINTER_IP = os.getenv('PRINTER_IP', '192.168.1.100')
 PRINTER_PORT = int(os.getenv('PRINTER_PORT', '9100'))
-
-SPECTACULAR_SETTINGS = {
-    'TITLE': 'Kiosk Backend API',
-    'DESCRIPTION': 'API documentation for Kiosk Backend - Store management system with card reader payment integration',
-    'VERSION': '1.0.0',
-    'SERVE_INCLUDE_SCHEMA': False,
-    'SCHEMA_PATH_PREFIX': '/api/kiosk/',
-    'TAGS': [
-        {'name': 'Products', 'description': 'Product listing and details endpoints'},
-        {'name': 'Categories', 'description': 'Category listing endpoints'},
-        {'name': 'Orders', 'description': 'Order management endpoints'},
-        {'name': 'Invoices', 'description': 'Invoice generation and download endpoints'},
-        {'name': 'Transactions', 'description': 'Payment transaction endpoints'},
-        {'name': 'Admin - Auth', 'description': 'Admin authentication endpoints'},
-        {'name': 'Admin - Products', 'description': 'Admin product management endpoints'},
-        {'name': 'Admin - Categories', 'description': 'Admin category management endpoints'},
-        {'name': 'Admin - Orders', 'description': 'Admin order management endpoints'},
-        {'name': 'Admin - Reports', 'description': 'Admin reporting endpoints'},
-    ],
-    'COMPONENT_SPLIT_REQUEST': True,
-    'COMPONENT_NO_READ_ONLY_REQUIRED': True,
-    'SORT_OPERATIONS': True,
-    'SORT_TAGS': True,
-    'TAG_ORDER': [
-        'Products',
-        'Categories',
-        'Orders',
-        'Invoices',
-        'Transactions',
-        'Admin - Auth',
-        'Admin - Products',
-        'Admin - Categories',
-        'Admin - Orders',
-        'Admin - Reports',
-    ],
-    'PREPEND_COMPONENTS': {
-        'securitySchemes': {
-            'jwtAuth': {
-                'type': 'http',
-                'scheme': 'bearer',
-                'bearerFormat': 'JWT',
-                'description': 'JWT token authentication. Get token from /api/kiosk/admin/auth/login/'
-            }
-        }
-    },
-    'SECURITY': [{'jwtAuth': []}],
-}
+STORE_NAME = os.getenv('STORE_NAME', 'فروشگاه')
 
 # JWT Settings
-from datetime import timedelta
-
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -277,10 +179,11 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
-    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
-    'USER_ID_FIELD': 'id',
-    'USER_ID_CLAIM': 'user_id',
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    'TOKEN_TYPE_CLAIM': 'token_type',
 }
 
+# API Documentation
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Kiosk Backend API',
+    'VERSION': '1.0.0',
+    'SCHEMA_PATH_PREFIX': '/api/kiosk/',
+}

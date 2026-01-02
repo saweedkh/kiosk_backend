@@ -14,6 +14,7 @@ from django.conf import settings
 from django.utils import timezone
 from .base import BasePaymentGateway
 from .exceptions import GatewayException
+from apps.logs.services.log_service import LogService
 
 try:
     import serial
@@ -59,16 +60,19 @@ class POSPaymentGateway(BasePaymentGateway):
         # If already connected, reuse the connection
         if self._connection:
             try:
-                # Check if connection is still alive
-                try:
-                    self._connection.getpeername()
-                    # Connection is alive, reuse it
-                    return
-                except (OSError, socket.error):
-                    # Connection is dead, reconnect
-                    self._connection = None
-            except Exception:
+                self._connection.getpeername()
+                # Connection is alive, reuse it
+                return
+            except (OSError, socket.error):
+                # Connection is dead, reconnect
+                self._connection = None
+            except Exception as e:
                 # Connection check failed, reconnect
+                LogService.log_warning(
+                    'payment',
+                    'pos_connection_check_failed',
+                    details={'error': str(e), 'error_type': type(e).__name__}
+                )
                 self._connection = None
         
         try:
@@ -78,8 +82,38 @@ class POSPaymentGateway(BasePaymentGateway):
             # Set timeout for connection (but keep it long for transaction waiting)
             self._connection.settimeout(30)  # 30 seconds for initial connection
             self._connection.connect((self.tcp_host, self.tcp_port))
-            print(f"✅ اتصال TCP/IP برقرار شد: {self.tcp_host}:{self.tcp_port}")
+            LogService.log_info(
+                'payment',
+                'pos_connection_established',
+                details={
+                    'host': self.tcp_host,
+                    'port': self.tcp_port,
+                    'connection_type': 'tcp'
+                }
+            )
+        except (socket.error, ConnectionError, TimeoutError) as e:
+            LogService.log_error(
+                'payment',
+                'pos_connection_failed',
+                details={
+                    'host': self.tcp_host,
+                    'port': self.tcp_port,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
+            )
+            raise GatewayException(f'Failed to connect to POS via TCP: {str(e)}')
         except Exception as e:
+            LogService.log_error(
+                'payment',
+                'pos_connection_unexpected_error',
+                details={
+                    'host': self.tcp_host,
+                    'port': self.tcp_port,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
+            )
             raise GatewayException(f'Failed to connect to POS via TCP: {str(e)}')
     
     def _disconnect(self):
@@ -87,8 +121,12 @@ class POSPaymentGateway(BasePaymentGateway):
         if self._connection:
             try:
                 self._connection.close()
-            except Exception:
-                pass
+            except (OSError, socket.error) as e:
+                LogService.log_warning(
+                    'payment',
+                    'pos_disconnect_error',
+                    details={'error': str(e), 'error_type': type(e).__name__}
+                )
             finally:
                 self._connection = None
     
@@ -129,9 +167,12 @@ class POSPaymentGateway(BasePaymentGateway):
         except GatewayException as e:
             result['message'] = f'خطا در اتصال: {str(e)}'
             result['details'] = {'error': str(e)}
+        except (socket.error, ConnectionError, TimeoutError) as e:
+            result['message'] = f'خطای شبکه: {str(e)}'
+            result['details'] = {'error': str(e), 'error_type': type(e).__name__}
         except Exception as e:
             result['message'] = f'خطای غیرمنتظره: {str(e)}'
-            result['details'] = {'error': str(e)}
+            result['details'] = {'error': str(e), 'error_type': type(e).__name__}
         finally:
             if self._connection:
                 self._disconnect()
@@ -201,10 +242,16 @@ class POSPaymentGateway(BasePaymentGateway):
         # Join all parts (NO separator - this is key!)
         message = "".join(parts)
         
-        # Debug: Print the message we're building
-        print(f"🔧 ساخت پیام: {message}")
-        print(f"   طول پیام: {len(message)} کاراکتر")
-        print(f"   تعداد تگ‌ها: {len(parts)}")
+        # Log the message we're building
+        LogService.log_info(
+            'payment',
+            'pos_message_built',
+            details={
+                'message_length': len(message),
+                'tag_count': len(parts),
+                'message_preview': message[:100] if len(message) > 100 else message
+            }
+        )
         
         # Convert to ASCII bytes (POS devices use ASCII, not UTF-8)
         message_bytes = message.encode('ascii')
@@ -223,22 +270,32 @@ class POSPaymentGateway(BasePaymentGateway):
             length = len(message_bytes)
             length_prefix = f"{length:04d}".encode('ascii')
             message_bytes = length_prefix + message_bytes
-            print(f"   ✅ اضافه کردن Length prefix: {length}")
+            LogService.log_info(
+                'payment',
+                'pos_message_format_length_prefix',
+                details={'length': length}
+            )
         elif format_type == 'with_stx_etx':
             # Add STX (0x02) at start and ETX (0x03) at end
             message_bytes = b'\x02' + message_bytes + b'\x03'
-            print(f"   ✅ اضافه کردن STX/ETX framing")
+            LogService.log_info('payment', 'pos_message_format_stx_etx')
         elif format_type == 'with_terminator':
             # Add CRLF terminator
             message_bytes = message_bytes + b'\r\n'
-            print(f"   ✅ اضافه کردن CRLF terminator")
+            LogService.log_info('payment', 'pos_message_format_terminator')
         elif format_type == 'with_null':
             # Add NULL terminator
             message_bytes = message_bytes + b'\x00'
-            print(f"   ✅ اضافه کردن NULL terminator")
+            LogService.log_info('payment', 'pos_message_format_null')
         
-        print(f"   پیام نهایی ({len(message_bytes)} bytes): {message_bytes[:100]}...")
-        print(f"   Hex (اول 200 کاراکتر): {message_bytes.hex()[:200]}...")
+        LogService.log_info(
+            'payment',
+            'pos_message_final',
+            details={
+                'message_length': len(message_bytes),
+                'message_preview': message_bytes[:100].hex() if len(message_bytes) > 100 else message_bytes.hex()
+            }
+        )
         
         return message_bytes
     
@@ -264,30 +321,61 @@ class POSPaymentGateway(BasePaymentGateway):
             self._connect()
         
         try:
-            # Debug: Log what we're sending
+            # Log what we're sending
             try:
                 command_str = command.decode('utf-8', errors='replace')
-                print(f"📤 ارسال درخواست ({len(command)} bytes): {command_str}")
-                print(f"   Hex: {command.hex()[:100]}...")
-            except:
-                print(f"📤 ارسال درخواست ({len(command)} bytes): {command[:50]}...")
+                LogService.log_info(
+                    'payment',
+                    'pos_sending_command',
+                    details={
+                        'command_length': len(command),
+                        'command_preview': command_str[:100] if len(command_str) > 100 else command_str,
+                        'hex_preview': command.hex()[:100]
+                    }
+                )
+            except (UnicodeDecodeError, AttributeError) as e:
+                LogService.log_info(
+                    'payment',
+                    'pos_sending_command_binary',
+                    details={
+                        'command_length': len(command),
+                        'command_preview': str(command[:50]),
+                        'error': str(e)
+                    }
+                )
             
             # IMPORTANT: Keep connection alive - don't close it!
             # Send command
             try:
                 bytes_sent = self._connection.sendall(command)
-                print(f"✅ داده ارسال شد ({len(command)} bytes)")
+                LogService.log_info(
+                    'payment',
+                    'pos_data_sent',
+                    details={'bytes_sent': len(command)}
+                )
                 
                 # Verify data was sent by checking socket state
                 try:
                     # Try to get socket info to verify it's still connected
                     peer = self._connection.getpeername()
-                    print(f"✅ اتصال فعال است: {peer[0]}:{peer[1]}")
-                except Exception as e:
-                    print(f"⚠️  خطا در بررسی اتصال: {e}")
+                    LogService.log_info(
+                        'payment',
+                        'pos_connection_verified',
+                        details={'peer_host': peer[0], 'peer_port': peer[1]}
+                    )
+                except (OSError, socket.error) as e:
+                    LogService.log_warning(
+                        'payment',
+                        'pos_connection_verification_failed',
+                        details={'error': str(e), 'error_type': type(e).__name__}
+                    )
                 
             except socket.error as e:
-                print(f"❌ خطا در ارسال داده: {e}")
+                LogService.log_error(
+                    'payment',
+                    'pos_send_data_failed',
+                    details={'error': str(e), 'error_type': type(e).__name__, 'bytes_attempted': len(command)}
+                )
                 raise GatewayException(f'Failed to send data to POS: {str(e)}')
             
             # Small delay to ensure data is sent and device processes it
@@ -301,18 +389,30 @@ class POSPaymentGateway(BasePaymentGateway):
                 ack = self._connection.recv(4096)
                 if ack:
                     ack_str = ack.decode('utf-8', errors='ignore')
-                    print(f"📥 دریافت پاسخ فوری از دستگاه: {ack_str[:100]}...")
-                    print(f"   Hex: {ack.hex()[:100]}...")
+                    LogService.log_info(
+                        'payment',
+                        'pos_immediate_response_received',
+                        details={
+                            'response_preview': ack_str[:100] if len(ack_str) > 100 else ack_str,
+                            'hex_preview': ack.hex()[:100]
+                        }
+                    )
                     # If we got a response, it might be the full response or an ACK
                     # Check if it looks like a complete response
                     if len(ack_str) > 5 and ('RS' in ack_str or 'OK' in ack_str or 'ACK' in ack_str):
-                        print(f"✅ پاسخ کامل دریافت شد!")
+                        LogService.log_info('payment', 'pos_complete_response_received')
                         return ack_str
             except socket.timeout:
                 # No immediate response - that's OK, device might process and respond later
-                print("ℹ️  هیچ پاسخ فوری دریافت نشد (این طبیعی است - دستگاه در حال پردازش است)")
-            except Exception as e:
-                print(f"⚠️  خطا در دریافت پاسخ فوری: {e}")
+                LogService.log_info('payment', 'pos_no_immediate_response', details={
+                    'note': 'Device is processing, waiting for response'
+                })
+            except (OSError, socket.error) as e:
+                LogService.log_warning(
+                    'payment',
+                    'pos_immediate_response_error',
+                    details={'error': str(e), 'error_type': type(e).__name__}
+                )
             finally:
                 # Reset timeout for main response waiting
                 self._connection.settimeout(1)
@@ -337,13 +437,21 @@ class POSPaymentGateway(BasePaymentGateway):
                 chunk = self._connection.recv(4096)
                 if chunk:
                     response += chunk.decode('utf-8', errors='ignore')
-                    print(f"📥 دریافت پاسخ اولیه: {response[:100]}...")
+                    LogService.log_info(
+                        'payment',
+                        'pos_initial_response_received',
+                        details={'response_preview': response[:100] if len(response) > 100 else response}
+                    )
             except socket.timeout:
                 # No immediate response, that's OK - device might be waiting for user
                 # Connection is still alive, continue waiting
                 pass
-            except Exception as e:
-                print(f"⚠️  خطا در دریافت پاسخ اولیه: {e}")
+            except (OSError, socket.error) as e:
+                LogService.log_warning(
+                    'payment',
+                    'pos_initial_response_error',
+                    details={'error': str(e), 'error_type': type(e).__name__}
+                )
                 # Don't disconnect - connection might still be valid
             
             # Now wait for actual transaction response (user interaction required)
@@ -356,7 +464,11 @@ class POSPaymentGateway(BasePaymentGateway):
                     if chunk:
                         chunk_str = chunk.decode('utf-8', errors='ignore')
                         response += chunk_str
-                        print(f"📥 دریافت داده: {chunk_str[:100]}...")
+                        LogService.log_info(
+                            'payment',
+                            'pos_data_chunk_received',
+                            details={'chunk_preview': chunk_str[:100] if len(chunk_str) > 100 else chunk_str}
+                        )
                         
                         # If we got some data, wait a bit more to see if more is coming
                         time.sleep(0.5)
@@ -369,7 +481,11 @@ class POSPaymentGateway(BasePaymentGateway):
                                     break
                                 more_str = more_chunk.decode('utf-8', errors='ignore')
                                 response += more_str
-                                print(f"📥 دریافت داده بیشتر: {more_str[:100]}...")
+                                LogService.log_info(
+                                    'payment',
+                                    'pos_additional_data_received',
+                                    details={'chunk_preview': more_str[:100] if len(more_str) > 100 else more_str}
+                                )
                         except socket.timeout:
                             # No more data, we're done
                             # But connection is still open!
@@ -377,7 +493,11 @@ class POSPaymentGateway(BasePaymentGateway):
                         
                         # If we have a complete response, break
                         if response and len(response) > 10:  # At least some meaningful response
-                            print(f"✅ پاسخ کامل دریافت شد ({len(response)} chars)")
+                            LogService.log_info(
+                                'payment',
+                                'pos_complete_response_received',
+                                details={'response_length': len(response)}
+                            )
                             break
                     else:
                         # No data yet, wait a bit but keep connection alive
@@ -386,18 +506,30 @@ class POSPaymentGateway(BasePaymentGateway):
                     # No response yet, continue waiting
                     # IMPORTANT: Connection is still alive, just no data yet
                     elapsed = int(time.time() - start_time)
-                    if elapsed % 10 == 0 and elapsed > 0:  # Print every 10 seconds
-                        print(f"⏳ منتظر پاسخ... ({elapsed}/{max_wait_time} ثانیه) - اتصال فعال است")
+                    if elapsed % 10 == 0 and elapsed > 0:  # Log every 10 seconds
+                        LogService.log_info(
+                            'payment',
+                            'pos_waiting_for_response',
+                            details={'elapsed': elapsed, 'max_wait_time': max_wait_time}
+                        )
                     # Check if connection is still alive
                     try:
                         self._connection.getpeername()  # This will raise if connection is dead
-                    except (OSError, socket.error):
-                        print(f"❌ اتصال قطع شد!")
+                    except (OSError, socket.error) as e:
+                        LogService.log_error(
+                            'payment',
+                            'pos_connection_lost',
+                            details={'error': str(e), 'elapsed': elapsed}
+                        )
                         raise GatewayException('اتصال به دستگاه POS قطع شد')
                     continue
-                except Exception as e:
+                except (OSError, socket.error) as e:
                     # Connection error - but try to keep connection if possible
-                    print(f"⚠️  خطا در دریافت پاسخ: {e}")
+                    LogService.log_warning(
+                        'payment',
+                        'pos_response_receive_error',
+                        details={'error': str(e), 'error_type': type(e).__name__}
+                    )
                     # Check if connection is still alive
                     try:
                         self._connection.getpeername()
@@ -405,21 +537,46 @@ class POSPaymentGateway(BasePaymentGateway):
                         continue
                     except (OSError, socket.error):
                         # Connection is dead, raise error
+                        LogService.log_error('payment', 'pos_connection_dead')
                         raise GatewayException(f'اتصال به دستگاه POS قطع شد: {e}')
             
             if not response:
-                print(f"⚠️  هیچ پاسخی دریافت نشد بعد از {int(time.time() - start_time)} ثانیه")
+                elapsed = int(time.time() - start_time)
+                LogService.log_warning(
+                    'payment',
+                    'pos_no_response_received',
+                    details={'elapsed_seconds': elapsed, 'max_wait_time': max_wait_time}
+                )
             else:
-                print(f"📥 دریافت پاسخ کامل ({len(response)} chars): {response[:200]}...")
+                LogService.log_info(
+                    'payment',
+                    'pos_full_response_received',
+                    details={
+                        'response_length': len(response),
+                        'response_preview': response[:200] if len(response) > 200 else response
+                    }
+                )
             
             return response
         except GatewayException:
             # Re-raise GatewayException as is
             raise
+        except (socket.error, ConnectionError, TimeoutError) as e:
+            # Network-related errors
+            LogService.log_error(
+                'payment',
+                'pos_communication_network_error',
+                details={'error': str(e), 'error_type': type(e).__name__}
+            )
+            # Don't disconnect immediately - connection might still be valid
+            raise GatewayException(f'Failed to communicate with POS: Network error - {str(e)}')
         except Exception as e:
-            # Only disconnect on critical errors, not on timeout
-            # Connection might still be valid for retry
-            print(f"⚠️  خطا در ارتباط: {e}")
+            # Unexpected errors
+            LogService.log_error(
+                'payment',
+                'pos_communication_error',
+                details={'error': str(e), 'error_type': type(e).__name__}
+            )
             # Don't disconnect immediately - connection might still be valid
             raise GatewayException(f'Failed to communicate with POS: {str(e)}')
     
@@ -565,23 +722,54 @@ class POSPaymentGateway(BasePaymentGateway):
         
         # IMPORTANT: Follow DLL's exact flow
         # Step 1: Test connection first (like DLL's TestConnection())
-        print("🔍 در حال تست اتصال به دستگاه POS...")
+        LogService.log_info('payment', 'pos_testing_connection', details={
+            'host': self.tcp_host,
+            'port': self.tcp_port
+        })
         try:
             connection_test = self.test_connection()
             if not connection_test.get('success', False):
+                LogService.log_error('payment', 'pos_connection_test_failed', details={
+                    'host': self.tcp_host,
+                    'port': self.tcp_port,
+                    'test_result': connection_test
+                })
                 raise GatewayException('اتصال به دستگاه POS برقرار نشد. لطفاً IP و Port را بررسی کنید.')
-            print(f"✅ اتصال TCP/IP برقرار است: {self.tcp_host}:{self.tcp_port}")
-        except Exception as e:
-            print(f"⚠️  خطا در تست اتصال: {e}")
+            LogService.log_info('payment', 'pos_connection_test_success', details={
+                'host': self.tcp_host,
+                'port': self.tcp_port
+            })
+        except GatewayException:
+            raise
+        except (socket.error, ConnectionError, TimeoutError) as e:
+            LogService.log_warning(
+                'payment',
+                'pos_connection_test_error',
+                details={'error': str(e), 'error_type': type(e).__name__}
+            )
             # Try to reconnect
             try:
                 if self._connection:
                     self._disconnect()
                 time.sleep(1)
                 self._connect()
-                print(f"✅ اتصال مجدد برقرار شد: {self.tcp_host}:{self.tcp_port}")
+                LogService.log_info('payment', 'pos_reconnection_success', details={
+                    'host': self.tcp_host,
+                    'port': self.tcp_port
+                })
             except Exception as reconnect_error:
+                LogService.log_error('payment', 'pos_reconnection_failed', details={
+                    'error': str(reconnect_error),
+                    'error_type': type(reconnect_error).__name__
+                })
                 raise GatewayException(f'اتصال به دستگاه POS برقرار نشد: {str(reconnect_error)}')
+        except Exception as e:
+            LogService.log_error(
+                'payment',
+                'pos_connection_test_unexpected_error',
+                details={'error': str(e), 'error_type': type(e).__name__}
+            )
+            raise GatewayException(f'خطای غیرمنتظره در تست اتصال: {str(e)}')
         
         # Step 2: Build additional_data dictionary (like DLL sets properties)
         additional_data = {}
@@ -604,12 +792,16 @@ class POSPaymentGateway(BasePaymentGateway):
             # Step 4: Send transaction (like DLL's send_transaction())
             # Payment transactions require user interaction (card swipe, PIN entry)
             # So we need to wait longer (up to 2 minutes)
-            print("\n⚠️  توجه: مبلغ روی دستگاه نمایش داده می‌شود.")
-            print("   لطفاً منتظر بمانید تا:")
-            print("   1. کارت را بکشید")
-            print("   2. رمز را وارد کنید")
-            print("   3. یا در دستگاه لغو کنید")
-            print(f"   (حداکثر 120 ثانیه منتظر می‌مانیم)\n")
+            LogService.log_info(
+                'payment',
+                'pos_payment_initiated',
+                details={
+                    'amount': amount,
+                    'order_number': order_number,
+                    'max_wait_time': 120,
+                    'message': 'Waiting for user interaction (card swipe, PIN entry, or cancel)'
+                }
+            )
             
             # IMPORTANT: Keep connection alive during transaction (like DLL does)
             # The socket must stay open to receive response
@@ -634,7 +826,31 @@ class POSPaymentGateway(BasePaymentGateway):
                 'gateway_response': parsed_response,
                 'amount': amount,
             }
+        except GatewayException:
+            raise
+        except (socket.error, ConnectionError, TimeoutError) as e:
+            LogService.log_error(
+                'payment',
+                'pos_payment_initiation_network_error',
+                details={
+                    'amount': amount,
+                    'order_number': order_number,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
+            )
+            raise GatewayException(f'Failed to initiate payment: Network error - {str(e)}')
         except Exception as e:
+            LogService.log_error(
+                'payment',
+                'pos_payment_initiation_error',
+                details={
+                    'amount': amount,
+                    'order_number': order_number,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
+            )
             raise GatewayException(f'Failed to initiate payment: {str(e)}')
         finally:
             # Don't disconnect immediately - keep connection for potential retries

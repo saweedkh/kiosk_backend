@@ -123,14 +123,6 @@ class Command(BaseCommand):
         
         self.stdout.write('')
         
-        # Check if gateway is active
-        if not PaymentGatewayAdapter.is_gateway_active():
-            self.stdout.write(self.style.WARNING('⚠️  Gateway فعال نیست!'))
-            response = input('آیا می‌خواهید ادامه دهید؟ (y/n): ')
-            if response.lower() != 'y':
-                self.stdout.write('عملیات لغو شد.')
-                return
-        
         # Get gateway instance
         try:
             gateway = PaymentGatewayAdapter.get_gateway()

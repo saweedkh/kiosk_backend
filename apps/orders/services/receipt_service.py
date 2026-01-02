@@ -18,8 +18,8 @@ class ReceiptService:
     after successful payment.
     """
     
-    # Store information - can be moved to settings later
-    STORE_NAME = "نانوایی ستاره سرخ"
+    # Store name from settings (with fallback to default)
+    STORE_NAME = getattr(settings, 'STORE_NAME', 'نانوایی ستاره سرخ')
     
     @staticmethod
     def get_daily_receipt_number(order: Order) -> int:
@@ -95,9 +95,11 @@ class ReceiptService:
         else:
             receipt_number = ReceiptService.get_daily_receipt_number(order)
         
-        # Prepare items data
+        # Prepare items data (ensure items are prefetched to avoid N+1)
         items_data = []
-        for item in order.items.all():
+        # Use select_related to fetch products in one query
+        items = order.items.select_related('product').all()
+        for item in items:
             items_data.append({
                 'name': item.product.name,
                 'quantity': item.quantity,

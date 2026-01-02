@@ -22,7 +22,6 @@ class Command(BaseCommand):
         self.stdout.write('1. بررسی تنظیمات:')
         config = settings.PAYMENT_GATEWAY_CONFIG
         self.stdout.write(f'   Gateway Name: {config.get("gateway_name")}')
-        self.stdout.write(f'   Gateway Active: {config.get("is_active")}')
         self.stdout.write(f'   Use DLL: {config.get("pos_use_dll")}')
         self.stdout.write(f'   DLL Path: {config.get("dll_path")}')
         self.stdout.write(f'   Terminal ID: {config.get("terminal_id")}')

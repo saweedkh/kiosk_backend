@@ -68,6 +68,7 @@ class OrderCreateAPIView(generics.GenericAPIView):
             request.session.create()
             session_key = request.session.session_key
         
+        order = None
         try:
             order = OrderService.create_order_from_items(
                 session_key, 
@@ -108,9 +109,9 @@ class OrderCreateAPIView(generics.GenericAPIView):
                 'message': str(e)
             }
             
-            # Try to get order if it was created before payment failed
+            # Include order details if order was created before payment failed
             # (order might be in cancelled state)
-            if 'order' in locals():
+            if order is not None:
                 error_response['order'] = OrderSerializer(order).data
             
             return Response(
