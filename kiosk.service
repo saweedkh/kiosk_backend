@@ -9,7 +9,7 @@ User=root
 Group=root
 WorkingDirectory=/opt/kiosk
 Environment="PATH=/opt/kiosk/venv/bin"
-Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
+Environment="DJANGO_SETTINGS_MODULE=config.settings"
 # بدون نیاز به network-online.target برای لوکال
 ExecStart=/opt/kiosk/venv/bin/gunicorn \
     --bind 127.0.0.1:8000 \
