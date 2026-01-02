@@ -9,9 +9,14 @@ load_dotenv()
 # تشخیص EXE یا normal execution
 if getattr(sys, 'frozen', False):
     # PyInstaller bundle
+    # sys._MEIPASS مسیر موقت است که PyInstaller فایل‌های extract شده را قرار می‌دهد
+    MEIPASS = Path(sys._MEIPASS) if hasattr(sys, '_MEIPASS') else Path(sys.executable).parent
     BASE_DIR = Path(sys.executable).parent
+    # برای staticfiles از داخل EXE استفاده می‌کنیم
+    STATICFILES_SOURCE = MEIPASS / 'staticfiles'
 else:
     BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    STATICFILES_SOURCE = BASE_DIR / 'staticfiles'
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-in-production')
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
@@ -56,7 +61,7 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [
-            BASE_DIR / 'staticfiles' / 'frontend',  # Next.js HTML files
+            STATICFILES_SOURCE / 'frontend' if getattr(sys, 'frozen', False) else BASE_DIR / 'staticfiles' / 'frontend',  # Next.js HTML files
         ],
         'APP_DIRS': True,
         'OPTIONS': {
@@ -93,10 +98,22 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+# در حالت EXE، staticfiles از داخل EXE خوانده می‌شود
+# اما STATIC_ROOT باید writable باشد، پس در کنار EXE قرار می‌گیرد
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [
-    BASE_DIR / 'staticfiles' / 'frontend',  # Next.js build
-]
+# STATICFILES_DIRS برای collectstatic استفاده می‌شود
+# در حالت EXE از داخل EXE می‌خوانیم
+if getattr(sys, 'frozen', False):
+    STATICFILES_DIRS = [
+        STATICFILES_SOURCE / 'frontend',  # از داخل EXE
+    ]
+    # مسیر frontend برای استفاده در urls و templates
+    FRONTEND_STATIC_PATH = STATICFILES_SOURCE / 'frontend'
+else:
+    STATICFILES_DIRS = [
+        BASE_DIR / 'staticfiles' / 'frontend',  # Next.js build
+    ]
+    FRONTEND_STATIC_PATH = BASE_DIR / 'staticfiles' / 'frontend'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

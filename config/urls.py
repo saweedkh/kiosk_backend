@@ -23,17 +23,18 @@ urlpatterns = [
     path('health/live/', health.liveness_check, name='liveness'),
     
     # Next.js Static Files (_next/static)
+    # در حالت EXE از FRONTEND_STATIC_PATH استفاده می‌کنیم
     re_path(
         r'^_next/static/(?P<path>.*)$',
         serve,
-        {'document_root': settings.STATIC_ROOT / 'frontend' / '_next' / 'static'}
+        {'document_root': getattr(settings, 'FRONTEND_STATIC_PATH', settings.STATIC_ROOT / 'frontend') / '_next' / 'static'}
     ),
     
     # Next.js Static Files (other assets)
     re_path(
         r'^static/(?P<path>.*)$',
         serve,
-        {'document_root': settings.STATIC_ROOT / 'frontend'}
+        {'document_root': getattr(settings, 'FRONTEND_STATIC_PATH', settings.STATIC_ROOT / 'frontend')}
     ),
     
     # Media files
